@@ -1,0 +1,1 @@
+export const PRESENCE_MAP_VERSION = '2026.10.1';

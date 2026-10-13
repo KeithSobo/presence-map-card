@@ -1,6 +1,6 @@
 {
   "name": "presence-map-card",
-  "version": "1.0.0",
+  "version": "2026.10.1",
   "description": "Multi-sensor mmWave presence radar and floor-plan custom card for Home Assistant",
   "type": "module",
   "main": "dist/presence-map-card.js",
@@ -13,7 +13,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "build": "esbuild src/presence-map-card.ts --bundle --format=esm --target=es2020 --outfile=dist/presence-map-card.js",
+    "build": "esbuild src/presence-map-card.ts --bundle --format=esm --target=es2020 --outfile=dist/presence-map-card.js && node scripts/generate-version.js",
+    "generate:version": "node scripts/generate-version.js",
+    "validate:release": "node scripts/validate-release.js",
     "watch": "esbuild src/presence-map-card.ts --bundle --format=esm --target=es2020 --outfile=dist/presence-map-card.js --sourcemap --watch"
   },
   "repository": {

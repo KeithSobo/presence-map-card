@@ -1,5 +1,6 @@
 export * from './types';
 export * from './config';
+export * from './config/version';
 export * from './coords';
 export * from './adapters';
 export * from './freshness';

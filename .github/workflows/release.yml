@@ -62,11 +62,16 @@ jobs:
             exit 1
           fi
 
+      - name: Validate release version and build artifacts
+        run: |
+          node scripts/validate-release.js "${GITHUB_REF_NAME}"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2.4.2
         with:
           files: |
             dist/presence-map-card.js
+            dist/version.json
           body_path: RELEASE_NOTES.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

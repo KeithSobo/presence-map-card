@@ -1,15 +1,14 @@
 import { PresenceMapCardConfig, HomeAssistant, DetectionBoundary, Target } from './types';
 import { validateConfig, getStubConfig } from './config';
+import { PRESENCE_MAP_VERSION } from './config/version';
 import { InovelliZhaAdapter } from './adapters';
 import { TargetFreshnessManager } from './freshness';
 import { renderSvg } from './rendering';
 import { createDemoTargets } from './demo';
 import './editor/presence-map-editor';
 
-const CARD_VERSION = '1.0.0';
-
 console.info(
-  `%c PresenceMap %c v${CARD_VERSION} `,
+  `%c PresenceMap %c v${PRESENCE_MAP_VERSION} `,
   'color: #ffffff; background: #03a9f4; font-weight: bold; border-radius: 3px 0 0 3px;',
   'color: #03a9f4; background: #263238; font-weight: bold; border-radius: 0 3px 3px 0;'
 );
