@@ -297,4 +297,111 @@ describe('SVG Radar and Floor-Plan Rendering Engine', () => {
     // Unverified boundary status stroke-dasharray
     expect(svg).toContain('stroke-dasharray="3 2"');
   });
+
+  it('renders retained last-known markers as hollow/gray with report age and source trail dots', () => {
+    const retainedTarget: Target = {
+      scopedId: 's1:1',
+      sensorId: 's1',
+      sensorColor: '#0284c7',
+      rawTargetId: 1,
+      sourceX: 50,
+      sourceY: 100,
+      x: 0.5,
+      y: 1.0,
+      worldX: 0.5,
+      worldY: 1.0,
+      timestamp: Date.now() - 39 * 60 * 1000,
+      isStale: true,
+      isLastKnown: true,
+      isLive: false,
+      ageSeconds: 39 * 60,
+    };
+
+    const sourceTrails = new Map<string, TrailPoint[]>([
+      [
+        's1',
+        [
+          { worldX: 0.4, worldY: 0.9, sequence: 0 },
+          { worldX: 0.45, worldY: 0.95, sequence: 1 },
+          { worldX: 0.5, worldY: 1.0, sequence: 2 },
+        ],
+      ],
+    ]);
+
+    const svg = renderSvg({
+      config: radarConfig,
+      targets: [retainedTarget],
+      trails: new Map(),
+      sourceTrails,
+      boundaries: new Map(),
+      occupancyStatus: 'clear',
+      reportingStatus: 'enabled',
+      isSourceAvailable: true,
+      isDark: false,
+    });
+
+    // Gray / hollow marker styling
+    expect(svg).toContain('fill-opacity="0.35"');
+    expect(svg).toContain('stroke-dasharray="2 2"');
+    // Retained age formatting
+    expect(svg).toContain('T1 (39m)');
+    // Source trail dots
+    expect(svg).toContain('source-trail-dot');
+    // Status text
+    expect(svg).toContain('OCCUPANCY CLEAR — showing last reported positions');
+  });
+
+  it('renders correct status display for reporting disabled, unavailable sources, and no recent data', () => {
+    // 1. Reporting disabled with retained targets
+    const svgReportingDisabled = renderSvg({
+      config: radarConfig,
+      targets: [
+        {
+          scopedId: 's1:1',
+          sensorId: 's1',
+          sensorColor: '#0284c7',
+          rawTargetId: 1,
+          x: 0,
+          y: 1,
+          worldX: 0,
+          worldY: 1,
+          timestamp: Date.now(),
+          isStale: true,
+          isLastKnown: true,
+          isLive: false,
+        },
+      ],
+      trails: new Map(),
+      boundaries: new Map(),
+      occupancyStatus: 'occupied',
+      reportingStatus: 'disabled',
+      isSourceAvailable: true,
+      isDark: false,
+    });
+    expect(svgReportingDisabled).toContain('REPORTING DISABLED — showing last reported positions');
+
+    // 2. Source unavailable
+    const svgUnavailable = renderSvg({
+      config: radarConfig,
+      targets: [],
+      trails: new Map(),
+      boundaries: new Map(),
+      isSourceAvailable: false,
+      isDark: false,
+    });
+    expect(svgUnavailable).toContain('SOURCE UNAVAILABLE — Waiting for entity');
+
+    // 3. Occupied but no data received yet
+    const svgWaiting = renderSvg({
+      config: radarConfig,
+      targets: [],
+      trails: new Map(),
+      boundaries: new Map(),
+      occupancyStatus: 'occupied',
+      reportingStatus: 'enabled',
+      isSourceAvailable: true,
+      isDark: false,
+    });
+    expect(svgWaiting).toContain('WAITING FOR TARGET DATA');
+  });
 });

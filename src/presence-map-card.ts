@@ -1,4 +1,4 @@
-import { PresenceMapCardConfig, HomeAssistant, DetectionBoundary, Target } from './types';
+import { PresenceMapCardConfig, HomeAssistant, DetectionBoundary } from './types';
 import { validateConfig, getStubConfig } from './config';
 import { PRESENCE_MAP_VERSION } from './config/version';
 import { InovelliZhaAdapter } from './adapters';
@@ -23,6 +23,7 @@ export class PresenceMapCard extends HTMLElement {
   private _resizeObserver?: ResizeObserver;
   private _root: ShadowRoot;
   private _lastEntitySnapshots: Map<string, string> = new Map();
+  private _sensorStatuses: Map<string, import('./adapters/inovelli').SensorParseResult> = new Map();
 
   constructor() {
     super();
@@ -49,6 +50,7 @@ export class PresenceMapCard extends HTMLElement {
       staleTimeoutSeconds: config.stale_timeout,
       trailHistorySeconds: config.trail_history_seconds,
       trailMaxPoints: config.trail_max_points,
+      showLastKnown: config.show_last_known,
     });
 
     this._render();
@@ -141,12 +143,10 @@ export class PresenceMapCard extends HTMLElement {
     if (!this._hass || !this._config) return;
 
     const now = Date.now();
-    const allTargets: Target[] = [];
-    const clearedSensorIds: string[] = [];
-
     const sensors = this._config.sensors || [];
     for (const sensor of sensors) {
       const res = InovelliZhaAdapter.parseSensor(sensor, this._hass, now);
+      this._sensorStatuses.set(sensor.id, res);
 
       if (res.boundary) {
         this._boundaries.set(sensor.id, res.boundary);
@@ -154,14 +154,15 @@ export class PresenceMapCard extends HTMLElement {
         this._boundaries.delete(sensor.id);
       }
 
-      if (res.occupancyStatus === 'clear' || res.reportingStatus === 'disabled') {
-        clearedSensorIds.push(sensor.id);
-      } else if (res.available) {
-        allTargets.push(...res.targets);
-      }
+      this._freshnessManager.updateSensor(
+        sensor.id,
+        res.targets,
+        res.occupancyStatus,
+        res.reportingStatus,
+        now,
+        res.sourceTrail
+      );
     }
-
-    this._freshnessManager.update(allTargets, now, clearedSensorIds);
   }
 
   private _isDarkMode(): boolean {
@@ -191,16 +192,34 @@ export class PresenceMapCard extends HTMLElement {
     if (!this._config) return;
 
     const isDark = this._isDarkMode();
-    const targets = this._freshnessManager.getActiveTargets();
-    const trails = this._freshnessManager.getTrails();
+    const targets = this._freshnessManager.getAllTargets();
+    const trails = this._freshnessManager.getFrontendTrails();
+    const sourceTrails = this._freshnessManager.getSourceTrails();
+
+    let overallOccupancy: import('./types').OccupancyStatus = 'unknown';
+    let overallReporting: import('./types').ReportingStatus = 'unknown';
+    let isSourceAvailable = true;
+
+    if (this._config.sensors && this._config.sensors.length > 0) {
+      const primaryRes = this._sensorStatuses.get(this._config.sensors[0].id);
+      if (primaryRes) {
+        overallOccupancy = primaryRes.occupancyStatus;
+        overallReporting = primaryRes.reportingStatus;
+        isSourceAvailable = primaryRes.available;
+      }
+    }
 
     const svgHtml = renderSvg({
       config: this._config,
       targets,
       trails,
+      sourceTrails,
       boundaries: this._boundaries,
       isDark,
       demoMode: Boolean(this._config.demo_mode),
+      occupancyStatus: overallOccupancy,
+      reportingStatus: overallReporting,
+      isSourceAvailable,
     });
 
     const titleHtml = this._config.title

@@ -383,34 +383,59 @@ describe('Inovelli ZHA Adapter and HA Entity Parsing', () => {
     expect(monitored).toContain('number.garage_lights_mmwave_depth_maximum_far');
   });
 
-  it('handles occupancy-clear by returning 0 active targets even if target coordinates remain', () => {
+  it('handles occupancy-clear by returning retained targets marked as last-known / stale', () => {
+    const thirtyNineMinutesAgo = now - 39 * 60 * 1000;
     const hass: HomeAssistant = {
       states: {
         'sensor.mmwave_targets': {
           entity_id: 'sensor.mmwave_targets',
           state: '0',
           attributes: {
-            targets: [{ x: 50, y: 100, target_id: 1 }],
+            targets: [{ x: 50, y: 100, target_id: 1, timestamp: thirtyNineMinutesAgo }],
+            trail: [
+              { x: 40, y: 90 },
+              { x: 45, y: 95 },
+              { x: 50, y: 100 },
+            ],
           },
-          last_changed: '2026-10-13T12:00:00Z',
-          last_updated: '2026-10-13T12:00:00Z',
+          last_changed: new Date(thirtyNineMinutesAgo).toISOString(),
+          last_updated: new Date(thirtyNineMinutesAgo).toISOString(),
         },
         'binary_sensor.garage_lights_occupancy': {
           entity_id: 'binary_sensor.garage_lights_occupancy',
           state: 'off',
           attributes: {},
-          last_changed: '2026-10-13T12:05:00Z',
-          last_updated: '2026-10-13T12:05:00Z',
+          last_changed: new Date(thirtyNineMinutesAgo + 60000).toISOString(),
+          last_updated: new Date(thirtyNineMinutesAgo + 60000).toISOString(),
         },
       },
     };
 
-    const result = InovelliZhaAdapter.parseSensor(baseSensor, hass, now);
+    const garageWithTrail: SensorConfig = {
+      ...baseSensor,
+      trail_attribute: 'trail',
+    };
+
+    const result = InovelliZhaAdapter.parseSensor(garageWithTrail, hass, now);
     expect(result.occupancyStatus).toBe('clear');
-    expect(result.targets).toHaveLength(0);
+    expect(result.targets).toHaveLength(1);
+    expect(result.targets[0].isLive).toBe(false);
+    expect(result.targets[0].isStale).toBe(true);
+    expect(result.targets[0].isLastKnown).toBe(true);
+    expect(result.targets[0].sourceX).toBe(50);
+    expect(result.targets[0].sourceY).toBe(100);
+    expect(result.targets[0].ageSeconds).toBe(39 * 60);
+
+    // Source trail points present, ordered, and without fabricated timestamps
+    expect(result.sourceTrail).toBeDefined();
+    expect(result.sourceTrail).toHaveLength(3);
+    expect(result.sourceTrail![0].sequence).toBe(0);
+    expect(result.sourceTrail![0].timestamp).toBeUndefined();
+    expect(result.sourceTrail![2].sequence).toBe(2);
+    expect(result.sourceTrail![2].timestamp).toBeUndefined();
   });
 
-  it('handles reporting-switch explicitly disabled by returning 0 active targets', () => {
+  it('handles reporting-switch explicitly disabled by returning retained targets marked as last-known', () => {
     const hass: HomeAssistant = {
       states: {
         'sensor.mmwave_targets': {
@@ -434,7 +459,32 @@ describe('Inovelli ZHA Adapter and HA Entity Parsing', () => {
 
     const result = InovelliZhaAdapter.parseSensor(baseSensor, hass, now);
     expect(result.reportingStatus).toBe('disabled');
-    expect(result.targets).toHaveLength(0);
+    expect(result.targets).toHaveLength(1);
+    expect(result.targets[0].isLive).toBe(false);
+    expect(result.targets[0].isStale).toBe(true);
+    expect(result.targets[0].isLastKnown).toBe(true);
+  });
+
+  it('extractRawTrail parses coordinate tuple arrays [[x, y]] safely without timestamps', () => {
+    const tupleTrail = [
+      [-50, 100],
+      [-40, 110],
+      [-30, 120],
+    ];
+    const points = InovelliZhaAdapter.extractRawTrail(tupleTrail, {
+      sourceUnits: 'cm',
+      mountingPosition: { x: 0, y: 0 },
+      rotationDeg: 0,
+      mirrorX: false,
+      mirrorY: false,
+    });
+    expect(points).toHaveLength(3);
+    expect(points[0].worldX).toBeCloseTo(-0.5);
+    expect(points[0].worldY).toBeCloseTo(1.0);
+    expect(points[0].sequence).toBe(0);
+    expect(points[0].timestamp).toBeUndefined();
+    expect(points[2].sequence).toBe(2);
+    expect(points[2].timestamp).toBeUndefined();
   });
 
   it('marks sensor unavailable when target entity is missing or unavailable', () => {

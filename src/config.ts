@@ -157,6 +157,10 @@ export function validateConfig(raw: unknown): {
       typeof sensorObj.boundary_max_z_entity === 'string' && sensorObj.boundary_max_z_entity.trim()
         ? sensorObj.boundary_max_z_entity.trim()
         : undefined;
+    const trailAttribute =
+      typeof sensorObj.trail_attribute === 'string' && sensorObj.trail_attribute.trim()
+        ? sensorObj.trail_attribute.trim()
+        : undefined;
 
     return {
       id,
@@ -180,6 +184,7 @@ export function validateConfig(raw: unknown): {
       color,
       fov,
       max_distance: maxDistance,
+      trail_attribute: trailAttribute,
     };
   });
 
@@ -195,6 +200,7 @@ export function validateConfig(raw: unknown): {
     show_labels: obj.show_labels !== false,
     show_coordinates: Boolean(obj.show_coordinates),
     show_boundaries: obj.show_boundaries !== false,
+    show_last_known: obj.show_last_known !== false,
     trail_history_seconds: trailHistorySeconds,
     trail_max_points: trailMaxPoints,
     demo_mode: demoMode,

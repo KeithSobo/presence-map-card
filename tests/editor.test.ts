@@ -376,4 +376,61 @@ describe('PresenceMapEditor Visual Configuration Component', () => {
 
     document.body.removeChild(editor);
   });
+
+  it('preserves position {x: 0, y: 0}, trail_attribute, and show_last_known through configuration round-tripping', () => {
+    const editor = document.createElement('presence-map-editor') as PresenceMapEditor;
+    const testConfig: PresenceMapCardConfig = {
+      type: 'custom:presence-map-card',
+      title: 'Garage Presence',
+      show_last_known: true,
+      sensors: [
+        {
+          id: 'garage',
+          name: 'Garage',
+          targets_entity: 'sensor.mmwave_targets',
+          occupancy_entity: 'binary_sensor.garage_lights_occupancy',
+          reporting_entity: 'switch.garage_lights_mmwave_target_info_report',
+          trail_attribute: 'trail',
+          position: { x: 0, y: 0 },
+        },
+      ],
+    };
+
+    editor.setConfig(testConfig);
+    const form = editor.shadowRoot?.querySelector('ha-form') as any;
+    expect(form).toBeDefined();
+    expect(form.data.show_last_known).toBe(true);
+    expect(form.data.sensor_trail_attribute).toBe('trail');
+    expect(form.data.sensor_position_x).toBe(0);
+    expect(form.data.sensor_position_y).toBe(0);
+
+    const changeListener = vi.fn();
+    editor.addEventListener('config-changed', changeListener);
+
+    // Simulate value-changed from ha-form
+    form.dispatchEvent(
+      new CustomEvent('value-changed', {
+        detail: {
+          value: {
+            ...form.data,
+            sensor_position_x: 0,
+            sensor_position_y: 0,
+            sensor_trail_attribute: 'trail',
+            show_last_known: true,
+          },
+        },
+        bubbles: true,
+        composed: true,
+      })
+    );
+
+    expect(changeListener).toHaveBeenCalledTimes(1);
+    const resultConfig = changeListener.mock.calls[0][0].detail.config as PresenceMapCardConfig;
+    expect(resultConfig.show_last_known).toBe(true);
+    expect(resultConfig.sensors?.[0].trail_attribute).toBe('trail');
+    expect(resultConfig.sensors?.[0].position).toEqual({ x: 0, y: 0 });
+    expect(resultConfig.sensors?.[0].position?.x).toBe(0);
+    expect(resultConfig.sensors?.[0].position?.y).toBe(0);
+    expect((resultConfig.sensors?.[0].position as any).true).toBeUndefined();
+  });
 });

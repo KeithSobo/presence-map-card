@@ -106,6 +106,11 @@ export class PresenceMapEditor extends HTMLElement {
           { name: 'show_labels', label: 'Show Target Labels', selector: { boolean: {} } },
           { name: 'show_coordinates', label: 'Show X/Y Coordinates', selector: { boolean: {} } },
           { name: 'show_boundaries', label: 'Show Boundaries', selector: { boolean: {} } },
+          {
+            name: 'show_last_known',
+            label: 'Show Last-Known Positions When Clear',
+            selector: { boolean: {} },
+          },
         ],
       },
       { name: 'demo_mode', label: 'Demo Mode (Simulated Data)', selector: { boolean: {} } },
@@ -166,6 +171,27 @@ export class PresenceMapEditor extends HTMLElement {
             name: 'sensor_boundary_prefix',
             label: 'Boundary Entity Prefix (e.g. number.garage_lights_mmwave_)',
             selector: { text: {} },
+          },
+          {
+            name: 'sensor_trail_attribute',
+            label: 'Source Trail Attribute (e.g. trail)',
+            selector: { text: {} },
+          },
+          {
+            type: 'grid',
+            name: '',
+            schema: [
+              {
+                name: 'sensor_position_x',
+                label: 'Sensor Position X (Meters)',
+                selector: { number: { mode: 'box', step: 0.1 } },
+              },
+              {
+                name: 'sensor_position_y',
+                label: 'Sensor Position Y (Meters)',
+                selector: { number: { mode: 'box', step: 0.1 } },
+              },
+            ],
           },
           {
             type: 'grid',
@@ -273,6 +299,7 @@ export class PresenceMapEditor extends HTMLElement {
       show_labels: config.show_labels !== false,
       show_coordinates: Boolean(config.show_coordinates),
       show_boundaries: config.show_boundaries !== false,
+      show_last_known: config.show_last_known !== false,
       demo_mode: Boolean(config.demo_mode),
       floorplan_image: config.floorplan?.image ?? '',
       floorplan_width: config.floorplan?.width_meters ?? 10,
@@ -282,6 +309,9 @@ export class PresenceMapEditor extends HTMLElement {
       sensor_occupancy_entity: primarySensor?.occupancy_entity ?? '',
       sensor_reporting_entity: primarySensor?.reporting_entity ?? '',
       sensor_boundary_prefix: primarySensor?.boundary_prefix ?? '',
+      sensor_trail_attribute: primarySensor?.trail_attribute ?? '',
+      sensor_position_x: primarySensor?.position?.x ?? 0,
+      sensor_position_y: primarySensor?.position?.y ?? 0,
       sensor_boundary_min_x_entity: primarySensor?.boundary_min_x_entity ?? '',
       sensor_boundary_max_x_entity: primarySensor?.boundary_max_x_entity ?? '',
       sensor_boundary_min_y_entity: primarySensor?.boundary_min_y_entity ?? '',
@@ -311,6 +341,7 @@ export class PresenceMapEditor extends HTMLElement {
       show_labels: Boolean(formData.show_labels),
       show_coordinates: Boolean(formData.show_coordinates),
       show_boundaries: Boolean(formData.show_boundaries),
+      show_last_known: formData.show_last_known !== false,
       demo_mode: Boolean(formData.demo_mode),
     };
 
@@ -337,6 +368,15 @@ export class PresenceMapEditor extends HTMLElement {
     const cleanStr = (val: unknown): string | undefined =>
       typeof val === 'string' && val.trim() ? val.trim() : undefined;
 
+    const posX =
+      formData.sensor_position_x !== undefined && formData.sensor_position_x !== ''
+        ? Number(formData.sensor_position_x)
+        : (primary.position?.x ?? 0);
+    const posY =
+      formData.sensor_position_y !== undefined && formData.sensor_position_y !== ''
+        ? Number(formData.sensor_position_y)
+        : (primary.position?.y ?? 0);
+
     const updatedPrimary = {
       ...primary,
       name:
@@ -348,6 +388,11 @@ export class PresenceMapEditor extends HTMLElement {
       occupancy_entity: cleanStr(formData.sensor_occupancy_entity),
       reporting_entity: cleanStr(formData.sensor_reporting_entity),
       boundary_prefix: cleanStr(formData.sensor_boundary_prefix),
+      trail_attribute: cleanStr(formData.sensor_trail_attribute),
+      position: {
+        x: Number.isNaN(posX) ? 0 : posX,
+        y: Number.isNaN(posY) ? 0 : posY,
+      },
       boundary_min_x_entity: cleanStr(formData.sensor_boundary_min_x_entity),
       boundary_max_x_entity: cleanStr(formData.sensor_boundary_max_x_entity),
       boundary_min_y_entity: cleanStr(formData.sensor_boundary_min_y_entity),

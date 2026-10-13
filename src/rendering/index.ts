@@ -11,9 +11,25 @@ export interface RenderContext {
   config: PresenceMapCardConfig;
   targets: Target[];
   trails: Map<string, TrailPoint[]>;
+  sourceTrails?: Map<string, TrailPoint[]>;
   boundaries: Map<string, DetectionBoundary>;
   isDark: boolean;
   demoMode?: boolean;
+  occupancyStatus?: import('../types').OccupancyStatus;
+  reportingStatus?: import('../types').ReportingStatus;
+  isSourceAvailable?: boolean;
+}
+
+export function formatAgeString(ageSeconds?: number): string {
+  if (ageSeconds === undefined || ageSeconds < 0) return '';
+  if (ageSeconds < 60) return `${ageSeconds}s`;
+  const minutes = Math.floor(ageSeconds / 60);
+  if (minutes < 60) {
+    return `${minutes}m`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const remainingMins = minutes % 60;
+  return remainingMins > 0 ? `${hours}h ${remainingMins}m` : `${hours}h`;
 }
 
 export function renderSvg(ctx: RenderContext): string {
@@ -200,8 +216,31 @@ export function renderSvg(ctx: RenderContext): string {
 
   // Trails Layer
   if (config.show_trails !== false) {
+    // 1. Source-provided historical trail dots (faded by sequence order, untimestamped)
+    if (ctx.sourceTrails) {
+      for (const [sensorId, pointList] of ctx.sourceTrails.entries()) {
+        const sensor = config.sensors?.find(s => s.id === sensorId);
+        const color = sensor?.color || '#0284c7';
+        const total = pointList.length;
+        for (let i = 0; i < total; i++) {
+          const pt = pointList[i];
+          const progress = total > 1 ? (i + 1) / total : 1;
+          const opacity = (0.15 + progress * 0.55).toFixed(2);
+          const r = (2.2 + progress * 1.4).toFixed(1);
+          svgParts.push(`
+            <circle class="source-trail-dot" cx="${projectX(pt.worldX)}" cy="${projectY(pt.worldY)}" r="${r}" fill="${color}" fill-opacity="${opacity}" />
+          `);
+        }
+      }
+    }
+
+    // 2. Frontend connected trails (only for sensors without source trails)
     for (const [scopedId, trailList] of trails.entries()) {
       if (trailList.length < 2) continue;
+      const sensorId = scopedId.split(':')[0];
+      if (ctx.sourceTrails && ctx.sourceTrails.has(sensorId)) {
+        continue; // Source trail takes precedence for this sensor
+      }
 
       const target = targets.find(t => t.scopedId === scopedId);
       const color = target ? target.sensorColor : '#0284c7';
@@ -222,11 +261,13 @@ export function renderSvg(ctx: RenderContext): string {
     }
   }
 
-  // Active & Stale Targets Layer
+  // Active, Stale, and Retained Last-Known Targets Layer
   for (const target of targets) {
     const tx = projectX(target.worldX);
     const ty = projectY(target.worldY);
-    const isStale = target.isStale;
+    const isLastKnown = Boolean(target.isLastKnown);
+    const isStale = Boolean(target.isStale || isLastKnown);
+    const isLive = Boolean(target.isLive && !target.isStale && !isLastKnown);
 
     // Inside / Outside / Unverified boundary styling
     let dotFillColor = target.sensorColor || '#0284c7';
@@ -244,19 +285,29 @@ export function renderSvg(ctx: RenderContext): string {
       strokeDasharray = '3 2';
     }
 
-    if (isStale) {
+    if (isLastKnown) {
+      // Retained last-known position: gray hollow marker
+      dotFillColor = isDark ? 'rgba(75, 85, 99, 0.15)' : 'rgba(156, 163, 175, 0.15)';
+      dotStrokeColor = isDark ? '#9ca3af' : '#64748b';
+      strokeDasharray = '3 3';
+    } else if (isStale) {
       dotFillColor = isDark ? '#4b5563' : '#9ca3af'; // Visibly stale muted color
       dotStrokeColor = isDark ? '#374151' : '#d1d5db';
       strokeDasharray = '2 2';
     }
 
-    const fillOpacity = isStale ? '0.5' : '0.95';
+    const fillOpacity = isLastKnown ? '0.35' : isStale ? '0.5' : '0.95';
+    const targetClass = isLastKnown
+      ? 'target-last-known target-stale'
+      : isStale
+        ? 'target-stale'
+        : 'target-live';
 
     svgParts.push(`
-      <g class="presence-target ${isStale ? 'target-stale' : 'target-live'}" data-target-id="${target.scopedId}">
+      <g class="presence-target ${targetClass}" data-target-id="${target.scopedId}">
         <!-- Pulse ring for active fresh targets -->
         ${
-          !isStale
+          isLive
             ? `<circle cx="${tx}" cy="${ty}" r="15" fill="${dotFillColor}" fill-opacity="0.25" filter="url(#glow)">
                  <animate attributeName="r" values="8;16;8" dur="2s" repeatCount="indefinite" />
                  <animate attributeName="opacity" values="0.6;0.1;0.6" dur="2s" repeatCount="indefinite" />
@@ -264,12 +315,12 @@ export function renderSvg(ctx: RenderContext): string {
             : ''
         }
 
-        <!-- Center Target Dot -->
+        <!-- Center Target Dot / Marker -->
         <circle cx="${tx}" cy="${ty}" r="7" fill="${dotFillColor}" fill-opacity="${fillOpacity}" stroke="${dotStrokeColor}" stroke-width="${strokeWidth}" stroke-dasharray="${strokeDasharray}" />
     `);
 
-    // Doppler indicator chevron (if moving)
-    if (target.dop !== undefined && Math.abs(target.dop) > 5 && !isStale) {
+    // Doppler indicator chevron (if moving and live)
+    if (target.dop !== undefined && Math.abs(target.dop) > 5 && isLive) {
       const isApproaching = target.dop > 0;
       const arrowLength = 12;
       const arrowDy = isApproaching ? arrowLength : -arrowLength;
@@ -282,8 +333,11 @@ export function renderSvg(ctx: RenderContext): string {
     // Target Labels
     if (config.show_labels !== false) {
       let mainLabel = `T${target.rawTargetId}`;
-      if (isStale && target.ageSeconds !== undefined) {
-        mainLabel += ` (stale ${target.ageSeconds}s)`;
+      const ageStr = formatAgeString(target.ageSeconds);
+      if (isLastKnown && ageStr) {
+        mainLabel += ` (${ageStr})`;
+      } else if (isStale && ageStr) {
+        mainLabel += ` (stale ${ageStr})`;
       }
 
       const labelBadgeBg = isDark ? 'rgba(15, 23, 42, 0.85)' : 'rgba(255, 255, 255, 0.9)';
@@ -324,12 +378,37 @@ export function renderSvg(ctx: RenderContext): string {
     `);
   }
 
-  // Status Footer
-  const activeCount = targets.filter(t => !t.isStale).length;
-  const staleCount = targets.filter(t => t.isStale).length;
-  let statusText = `${activeCount} active target${activeCount === 1 ? '' : 's'}`;
-  if (staleCount > 0) {
-    statusText += ` (${staleCount} stale)`;
+  // Meaningful Status Display
+  const liveCount = targets.filter(t => t.isLive !== false && !t.isStale && !t.isLastKnown).length;
+  let statusText: string;
+
+  if (ctx.isSourceAvailable === false) {
+    statusText = 'SOURCE UNAVAILABLE — Waiting for entity';
+  } else if (ctx.reportingStatus === 'disabled') {
+    statusText =
+      targets.length > 0
+        ? 'REPORTING DISABLED — showing last reported positions'
+        : 'REPORTING DISABLED';
+  } else if (ctx.occupancyStatus === 'clear') {
+    statusText =
+      targets.length > 0 ? 'OCCUPANCY CLEAR — showing last reported positions' : 'OCCUPANCY CLEAR';
+  } else if (liveCount > 0) {
+    statusText = `LIVE — ${liveCount} active target${liveCount === 1 ? '' : 's'}`;
+    const retainedCount = targets.length - liveCount;
+    if (retainedCount > 0) {
+      statusText += ` (${retainedCount} last known)`;
+    }
+  } else if (targets.length > 0) {
+    const maxAge = targets.reduce(
+      (max, t) => (t.ageSeconds !== undefined && t.ageSeconds > max ? t.ageSeconds : max),
+      0
+    );
+    const ageStr = formatAgeString(maxAge);
+    statusText = ageStr
+      ? `NO RECENT DATA — last report ${ageStr} ago`
+      : 'NO RECENT DATA — showing last reported positions';
+  } else {
+    statusText = 'WAITING FOR TARGET DATA';
   }
 
   svgParts.push(`

@@ -80,9 +80,11 @@ When using an Inovelli Blue mmWave switch with ZHA (or Zigbee2MQTT) and a templa
 | :------------------ | :--------------------------------------------------- | :------------------------------- |
 | `targets_entity`    | Sensor with target coordinate attribute (Required)   | `sensor.garage_mmwave_targets`   |
 | `targets_attribute` | Attribute key holding the array (Default: `targets`) | `targets`                        |
+| `trail_attribute`   | Sensor attribute holding retained trail points       | `trail`                          |
 | `occupancy_entity`  | Binary sensor indicating presence (Optional)         | `binary_sensor.garage_occupancy` |
 | `reporting_entity`  | Switch or boolean controlling reporting (Optional)   | `switch.garage_mmwave_reporting` |
 | `boundary_prefix`   | Entity prefix for detection zone numbers (Optional)  | `number.garage_lights_mmwave_`   |
+| `show_last_known`   | Retain and display last-known coordinates when clear | `true` (Default: `true`)         |
 
 ---
 
@@ -92,8 +94,9 @@ When using an Inovelli Blue mmWave switch with ZHA (or Zigbee2MQTT) and a templa
 
 Complete configuration for an Inovelli Blue mmWave switch using ZHA:
 
-- `occupancy_entity`: (`binary_sensor.garage_lights_occupancy`) indicates occupied vs clear. When clear (`off`), live targets are immediately cleared.
-- `reporting_entity`: (`switch.garage_lights_mmwave_target_info_report`) indicates whether target coordinate reporting is enabled on the mmWave switch.
+- `occupancy_entity`: (`binary_sensor.garage_lights_occupancy`) indicates occupied vs clear. When clear (`off`), live target styling ends immediately and last-known positions are retained and displayed as hollow gray markers with original report age.
+- `reporting_entity`: (`switch.garage_lights_mmwave_target_info_report`) indicates whether coordinate reporting is enabled on the mmWave switch.
+- `trail_attribute`: (`trail`) reads source-provided retained trail coordinates from `sensor.mmwave_targets.attributes.trail` and displays them as sequence-faded dots even when occupancy is clear.
 - `boundary_prefix`: (`number.garage_lights_mmwave_`) discovers and tracks all 6 Inovelli boundary slider entities (`width_minimum_left`, `width_maximum_right`, `depth_minimum_near`, `depth_maximum_far`, `height_minimum_floor`, `height_maximum_ceiling`).
 
 ```yaml
@@ -106,8 +109,9 @@ range_meters: 6
 show_rings: true
 show_trails: true
 show_labels: true
-show_boundaries: true
+show_boundaries: false
 show_coordinates: true
+show_last_known: true
 demo_mode: false
 sensors:
   - id: garage
@@ -116,6 +120,7 @@ sensors:
     occupancy_entity: binary_sensor.garage_lights_occupancy
     reporting_entity: switch.garage_lights_mmwave_target_info_report
     boundary_prefix: number.garage_lights_mmwave_
+    trail_attribute: trail
     source_units: cm
     color: '#0284C7'
     fov: 120

@@ -42,6 +42,7 @@ export interface SensorConfig {
   color?: string;
   fov?: number; // degrees, default 120
   max_distance?: number; // in meters, default 6
+  trail_attribute?: string;
 }
 
 export interface FloorplanConfig {
@@ -62,6 +63,7 @@ export interface PresenceMapCardConfig {
   show_labels?: boolean;
   show_coordinates?: boolean;
   show_boundaries?: boolean;
+  show_last_known?: boolean; // default true
   trail_history_seconds?: number;
   trail_max_points?: number;
   demo_mode?: boolean;
@@ -94,6 +96,8 @@ export interface Target {
   dop?: number;
   timestamp: number;
   isStale: boolean;
+  isLastKnown?: boolean;
+  isLive?: boolean;
   ageSeconds?: number;
   boundaryStatus?: BoundaryStatus;
 }
@@ -101,7 +105,8 @@ export interface Target {
 export interface TrailPoint {
   worldX: number;
   worldY: number;
-  timestamp: number;
+  timestamp?: number;
+  sequence?: number;
 }
 
 export interface HassEntity {

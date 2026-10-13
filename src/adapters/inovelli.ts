@@ -4,6 +4,7 @@ import {
   HassEntity,
   Target,
   RawTargetData,
+  TrailPoint,
   DetectionBoundary,
   OccupancyStatus,
   ReportingStatus,
@@ -16,8 +17,10 @@ export interface SensorParseResult {
   occupancyStatus: OccupancyStatus;
   reportingStatus: ReportingStatus;
   targets: Target[];
+  sourceTrail?: TrailPoint[];
   boundary?: DetectionBoundary;
   timestamp: number;
+  lastReportTimestamp?: number;
   error?: string;
 }
 
@@ -131,6 +134,71 @@ export class InovelliZhaAdapter {
     }
 
     return validTargets;
+  }
+
+  /**
+   * Safely parses source-provided trail points (from sensor.trail_attribute).
+   * Supports array of coordinate objects [{x, y}] or array of tuples [[x, y]], or JSON strings.
+   * Treats points as ordered sequence without fabricating artificial timestamps.
+   */
+  public static extractRawTrail(
+    attrValue: unknown,
+    transformParams: {
+      position?: { x: number; y: number };
+      rotation?: number;
+      mirrorX?: boolean;
+      mirrorY?: boolean;
+      sourceUnits: import('../types').UnitOfLength;
+    },
+    maxPoints = 50
+  ): TrailPoint[] {
+    if (!attrValue) return [];
+
+    let parsed = attrValue;
+    if (typeof attrValue === 'string') {
+      const trimmed = attrValue.trim();
+      if (!trimmed || ['none', 'unavailable', 'unknown'].includes(trimmed)) return [];
+      try {
+        parsed = JSON.parse(trimmed);
+      } catch {
+        return [];
+      }
+    }
+
+    if (!Array.isArray(parsed)) return [];
+
+    const points: TrailPoint[] = [];
+    for (let i = 0; i < parsed.length; i++) {
+      const item = parsed[i];
+      if (!item) continue;
+
+      let x: number | undefined;
+      let y: number | undefined;
+
+      if (Array.isArray(item) && item.length >= 2) {
+        x = Number(item[0]);
+        y = Number(item[1]);
+      } else if (typeof item === 'object') {
+        const obj = item as Record<string, unknown>;
+        x = Number(obj.x);
+        y = Number(obj.y);
+      }
+
+      if (x !== undefined && y !== undefined && Number.isFinite(x) && Number.isFinite(y)) {
+        const { worldX, worldY } = transformToWorld(x, y, transformParams);
+        points.push({
+          worldX,
+          worldY,
+          sequence: points.length,
+        });
+      }
+    }
+
+    if (points.length > maxPoints) {
+      return points.slice(points.length - maxPoints);
+    }
+
+    return points;
   }
 
   /**
@@ -307,20 +375,6 @@ export class InovelliZhaAdapter {
       };
     }
 
-    // Only clear targets if occupancy is explicitly clear ('off') or reporting is explicitly disabled ('off').
-    // Unknown occupancy or unknown reporting MUST NOT erase valid fresh coordinates!
-    if (occupancyStatus === 'clear' || reportingStatus === 'disabled') {
-      return {
-        sensorId: sensor.id,
-        available: true,
-        occupancyStatus,
-        reportingStatus,
-        targets: [],
-        boundary,
-        timestamp: now,
-      };
-    }
-
     const attrName = sensor.targets_attribute || 'targets';
     const rawAttr = targetState.attributes ? targetState.attributes[attrName] : undefined;
     const rawTargets = this.extractRawTargets(rawAttr);
@@ -333,9 +387,19 @@ export class InovelliZhaAdapter {
       sourceUnits: sensor.source_units ?? 'cm',
     };
 
+    let sourceTrail: TrailPoint[] | undefined = undefined;
+    if (sensor.trail_attribute && targetState.attributes) {
+      const rawTrailAttr = targetState.attributes[sensor.trail_attribute];
+      sourceTrail = this.extractRawTrail(rawTrailAttr, transformParams);
+    }
+
+    const isClearOrDisabled = occupancyStatus === 'clear' || reportingStatus === 'disabled';
+
     const targets: Target[] = rawTargets.map(raw => {
       const { worldX, worldY, localX, localY } = transformToWorld(raw.x, raw.y, transformParams);
       const ts = this.resolveTimestamp(raw, targetState, now);
+      const ageMs = Math.max(0, now - ts);
+      const ageSeconds = Math.round(ageMs / 1000);
       const scopedId = `${sensor.id}:${raw.target_id}`;
 
       // Evaluate inside/outside boundary status in sensor's source coordinate system and units
@@ -364,7 +428,10 @@ export class InovelliZhaAdapter {
         worldY,
         dop: raw.dop,
         timestamp: ts,
-        isStale: false,
+        ageSeconds,
+        isStale: isClearOrDisabled,
+        isLastKnown: isClearOrDisabled,
+        isLive: !isClearOrDisabled,
         boundaryStatus,
       };
     });
@@ -375,8 +442,10 @@ export class InovelliZhaAdapter {
       occupancyStatus,
       reportingStatus,
       targets,
+      sourceTrail,
       boundary,
       timestamp: now,
+      lastReportTimestamp: targets.length > 0 ? targets[0].timestamp : undefined,
     };
   }
 }
