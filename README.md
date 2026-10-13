@@ -208,3 +208,11 @@ demo_mode: true
 ```
 
 The card will simulate realistic moving targets across multiple virtual sensors, complete with Doppler velocity, fading trails, and radar rings.
+
+---
+
+## License
+
+This project is open source and available under the [MIT License](file:///c:/Users/keith/Downloads/ha/presence-map-card/LICENSE).
+
+Copyright (c) 2026 Keith Sobolewski, Daryl Peddle.

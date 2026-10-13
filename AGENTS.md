@@ -58,4 +58,4 @@ All source code lives in `src/` organized into decoupled, single-responsibility 
    - Maintain a minimum of **80% coverage** across statements, branches, functions, and lines in handwritten logic.
    - Tests must be behavioral and cover real edge cases (unavailable entities, malformed target JSON, overlapping sensors, boundary transforms, coordinate math, stale data transitions, trail bounds, and editor round-tripping).
 6. **Licensing**:
-   - The project license choice must be confirmed by Keith Sobo and Daryl Prischak before tagging a public production release.
+   - The project is licensed under the MIT License by Keith Sobolewski and Daryl Peddle.

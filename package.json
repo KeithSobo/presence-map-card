@@ -30,8 +30,8 @@
     "radar",
     "floorplan"
   ],
-  "author": "Keith Sobo",
-  "license": "UNLICENSED",
+  "author": "Keith Sobolewski",
+  "license": "MIT",
   "devDependencies": {
     "@types/node": "^22.13.1",
     "@typescript-eslint/eslint-plugin": "^8.24.0",
