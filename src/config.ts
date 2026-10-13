@@ -133,6 +133,30 @@ export function validateConfig(raw: unknown): {
       typeof sensorObj.max_distance === 'number' && sensorObj.max_distance > 0
         ? sensorObj.max_distance
         : rangeMeters;
+    const boundaryMinXEntity =
+      typeof sensorObj.boundary_min_x_entity === 'string' && sensorObj.boundary_min_x_entity.trim()
+        ? sensorObj.boundary_min_x_entity.trim()
+        : undefined;
+    const boundaryMaxXEntity =
+      typeof sensorObj.boundary_max_x_entity === 'string' && sensorObj.boundary_max_x_entity.trim()
+        ? sensorObj.boundary_max_x_entity.trim()
+        : undefined;
+    const boundaryMinYEntity =
+      typeof sensorObj.boundary_min_y_entity === 'string' && sensorObj.boundary_min_y_entity.trim()
+        ? sensorObj.boundary_min_y_entity.trim()
+        : undefined;
+    const boundaryMaxYEntity =
+      typeof sensorObj.boundary_max_y_entity === 'string' && sensorObj.boundary_max_y_entity.trim()
+        ? sensorObj.boundary_max_y_entity.trim()
+        : undefined;
+    const boundaryMinZEntity =
+      typeof sensorObj.boundary_min_z_entity === 'string' && sensorObj.boundary_min_z_entity.trim()
+        ? sensorObj.boundary_min_z_entity.trim()
+        : undefined;
+    const boundaryMaxZEntity =
+      typeof sensorObj.boundary_max_z_entity === 'string' && sensorObj.boundary_max_z_entity.trim()
+        ? sensorObj.boundary_max_z_entity.trim()
+        : undefined;
 
     return {
       id,
@@ -142,6 +166,12 @@ export function validateConfig(raw: unknown): {
       occupancy_entity: occupancyEntity,
       reporting_entity: reportingEntity,
       boundary_prefix: boundaryPrefix,
+      boundary_min_x_entity: boundaryMinXEntity,
+      boundary_max_x_entity: boundaryMaxXEntity,
+      boundary_min_y_entity: boundaryMinYEntity,
+      boundary_max_y_entity: boundaryMaxYEntity,
+      boundary_min_z_entity: boundaryMinZEntity,
+      boundary_max_z_entity: boundaryMaxZEntity,
       source_units: sourceUnits,
       position: { x: posX, y: posY },
       rotation,
@@ -163,6 +193,7 @@ export function validateConfig(raw: unknown): {
     show_rings: obj.show_rings !== false,
     show_trails: obj.show_trails !== false,
     show_labels: obj.show_labels !== false,
+    show_coordinates: Boolean(obj.show_coordinates),
     show_boundaries: obj.show_boundaries !== false,
     trail_history_seconds: trailHistorySeconds,
     trail_max_points: trailMaxPoints,

@@ -68,11 +68,7 @@ export class PresenceMapCard extends HTMLElement {
     const sensors = this._config.sensors || [];
 
     for (const sensor of sensors) {
-      const entitiesToCheck = [
-        sensor.targets_entity,
-        sensor.occupancy_entity,
-        sensor.reporting_entity,
-      ].filter(Boolean) as string[];
+      const entitiesToCheck = InovelliZhaAdapter.getMonitoredEntityIds(sensor);
 
       for (const entityId of entitiesToCheck) {
         const stateObj = hass.states[entityId];
@@ -154,9 +150,11 @@ export class PresenceMapCard extends HTMLElement {
 
       if (res.boundary) {
         this._boundaries.set(sensor.id, res.boundary);
+      } else {
+        this._boundaries.delete(sensor.id);
       }
 
-      if (!res.reportingEnabled || res.occupancy === false) {
+      if (res.occupancyStatus === 'clear' || res.reportingStatus === 'disabled') {
         clearedSensorIds.push(sensor.id);
       } else if (res.available) {
         allTargets.push(...res.targets);

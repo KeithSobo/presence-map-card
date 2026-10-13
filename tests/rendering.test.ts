@@ -236,4 +236,65 @@ describe('SVG Radar and Floor-Plan Rendering Engine', () => {
 
     expect(svg).toContain('DEMO (Simulated Data)');
   });
+
+  it('renders coordinate labels and imperial feet/inches distance rings', () => {
+    const imperialConfig: PresenceMapCardConfig = {
+      ...radarConfig,
+      display_units: 'imperial',
+      show_coordinates: true,
+    };
+
+    const targetWithZ: Target = {
+      scopedId: 's1:1',
+      sensorId: 's1',
+      sensorColor: '#03a9f4',
+      rawTargetId: 1,
+      sourceX: -85,
+      sourceY: 102,
+      sourceZ: -6,
+      x: -0.85,
+      y: 1.02,
+      z: -0.06,
+      worldX: -0.85,
+      worldY: 1.02,
+      timestamp: Date.now(),
+      isStale: false,
+      boundaryStatus: 'unverified',
+    };
+
+    const targetWithoutZ: Target = {
+      scopedId: 's1:2',
+      sensorId: 's1',
+      sensorColor: '#03a9f4',
+      rawTargetId: 2,
+      sourceX: 50,
+      sourceY: 150,
+      x: 0.5,
+      y: 1.5,
+      worldX: 0.5,
+      worldY: 1.5,
+      timestamp: Date.now(),
+      isStale: true,
+      ageSeconds: 14,
+      boundaryStatus: 'inside',
+    };
+
+    const svg = renderSvg({
+      config: imperialConfig,
+      targets: [targetWithZ, targetWithoutZ],
+      trails: new Map(),
+      boundaries: new Map(),
+      isDark: true,
+    });
+
+    // Imperial distance rings formatting (feet & inches)
+    expect(svg).toContain('6\' 7"');
+    // Coordinates display
+    expect(svg).toContain('x:-85 y:102 z:-6');
+    expect(svg).toContain('x:50 y:150');
+    // Stale age badge
+    expect(svg).toContain('(stale 14s)');
+    // Unverified boundary status stroke-dasharray
+    expect(svg).toContain('stroke-dasharray="3 2"');
+  });
 });

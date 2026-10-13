@@ -131,4 +131,72 @@ describe('PresenceMapEditor Visual Configuration Component', () => {
     expect(emittedConfig.sensors?.[0].rotation).toBe(180);
     expect(emittedConfig.sensors?.[0].mirror_y).toBe(true);
   });
+
+  it('preserves additional sensors and explicit boundary overrides without dropping them', () => {
+    const multiSensorConfig: PresenceMapCardConfig = {
+      ...sampleConfig,
+      trail_history_seconds: 45,
+      trail_max_points: 150,
+      sensors: [
+        {
+          id: 's1',
+          name: 'Sensor 1',
+          targets_entity: 'sensor.target1',
+          boundary_min_x_entity: 'number.custom_min_x',
+          boundary_max_x_entity: 'number.custom_max_x',
+          boundary_min_y_entity: 'number.custom_min_y',
+          boundary_max_y_entity: 'number.custom_max_y',
+          boundary_min_z_entity: 'number.custom_min_z',
+          boundary_max_z_entity: 'number.custom_max_z',
+        },
+        {
+          id: 's2',
+          name: 'Sensor 2 (Additional)',
+          targets_entity: 'sensor.target2',
+          position: { x: 2, y: 1 },
+          color: '#e91e63',
+        },
+      ],
+    };
+
+    const editor = document.createElement('presence-map-editor') as PresenceMapEditor;
+    editor.setConfig(multiSensorConfig);
+
+    const form = editor.shadowRoot?.querySelector('ha-form') as any;
+    expect(form.data.sensor_boundary_min_x_entity).toBe('number.custom_min_x');
+    expect(form.data.sensor_boundary_max_x_entity).toBe('number.custom_max_x');
+    expect(form.data.sensor_boundary_min_y_entity).toBe('number.custom_min_y');
+    expect(form.data.sensor_boundary_max_y_entity).toBe('number.custom_max_y');
+    expect(form.data.sensor_boundary_min_z_entity).toBe('number.custom_min_z');
+    expect(form.data.sensor_boundary_max_z_entity).toBe('number.custom_max_z');
+
+    const changeListener = vi.fn();
+    editor.addEventListener('config-changed', changeListener);
+
+    form.dispatchEvent(
+      new CustomEvent('value-changed', {
+        detail: {
+          value: {
+            ...form.data,
+            title: 'Updated Multi-Sensor Radar',
+            sensor_boundary_min_x_entity: 'number.overridden_min_x',
+          },
+        },
+        bubbles: true,
+        composed: true,
+      })
+    );
+
+    expect(changeListener).toHaveBeenCalledTimes(1);
+    const resultConfig = changeListener.mock.calls[0][0].detail.config as PresenceMapCardConfig;
+    expect(resultConfig.title).toBe('Updated Multi-Sensor Radar');
+    expect(resultConfig.trail_history_seconds).toBe(45);
+    expect(resultConfig.trail_max_points).toBe(150);
+    expect(resultConfig.sensors).toHaveLength(2);
+    expect(resultConfig.sensors?.[0].boundary_min_x_entity).toBe('number.overridden_min_x');
+    expect(resultConfig.sensors?.[0].boundary_max_x_entity).toBe('number.custom_max_x');
+    expect(resultConfig.sensors?.[1].id).toBe('s2');
+    expect(resultConfig.sensors?.[1].name).toBe('Sensor 2 (Additional)');
+    expect(resultConfig.sensors?.[1].position).toEqual({ x: 2, y: 1 });
+  });
 });

@@ -1,6 +1,9 @@
 export type UnitOfLength = 'mm' | 'cm' | 'm' | 'in' | 'ft';
 export type DisplayUnits = 'metric' | 'imperial';
 export type ThemeMode = 'auto' | 'light' | 'dark';
+export type BoundaryStatus = 'inside' | 'outside' | 'unverified' | 'none';
+export type OccupancyStatus = 'occupied' | 'clear' | 'unknown';
+export type ReportingStatus = 'enabled' | 'disabled' | 'unknown';
 
 export interface SensorPosition {
   x: number;
@@ -8,10 +11,13 @@ export interface SensorPosition {
 }
 
 export interface DetectionBoundary {
-  minX?: number;
-  maxX?: number;
-  minY?: number;
-  maxY?: number;
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+  minZ?: number;
+  maxZ?: number;
+  sourceUnits?: UnitOfLength;
 }
 
 export interface SensorConfig {
@@ -22,6 +28,12 @@ export interface SensorConfig {
   occupancy_entity?: string;
   reporting_entity?: string;
   boundary_prefix?: string;
+  boundary_min_x_entity?: string;
+  boundary_max_x_entity?: string;
+  boundary_min_y_entity?: string;
+  boundary_max_y_entity?: string;
+  boundary_min_z_entity?: string;
+  boundary_max_z_entity?: string;
   source_units?: UnitOfLength;
   position?: SensorPosition;
   rotation?: number; // degrees clockwise
@@ -48,6 +60,7 @@ export interface PresenceMapCardConfig {
   show_rings?: boolean;
   show_trails?: boolean;
   show_labels?: boolean;
+  show_coordinates?: boolean;
   show_boundaries?: boolean;
   trail_history_seconds?: number;
   trail_max_points?: number;
@@ -70,6 +83,9 @@ export interface Target {
   sensorId: string;
   sensorColor: string;
   rawTargetId: string | number;
+  sourceX: number; // local coordinate in source units (e.g. cm)
+  sourceY: number; // local coordinate in source units (e.g. cm)
+  sourceZ?: number; // local coordinate in source units (e.g. cm)
   x: number; // sensor local in meters
   y: number; // sensor local in meters
   z?: number;
@@ -78,6 +94,8 @@ export interface Target {
   dop?: number;
   timestamp: number;
   isStale: boolean;
+  ageSeconds?: number;
+  boundaryStatus?: BoundaryStatus;
 }
 
 export interface TrailPoint {

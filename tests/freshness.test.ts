@@ -117,4 +117,15 @@ describe('Target Freshness and Trail Management', () => {
     const prunedTrails = manager.getTrails().get('sensor_1:1');
     expect(prunedTrails).toBeUndefined();
   });
+
+  it('clears all targets and trails when clear is called', () => {
+    const manager = new TargetFreshnessManager();
+    const target = createMockTarget('sensor_1', 1, 1.0, 1.0, 1000);
+    manager.update([target], 1000);
+    expect(manager.getActiveTargets()).toHaveLength(1);
+
+    manager.clear();
+    expect(manager.getActiveTargets()).toHaveLength(0);
+    expect(manager.getTrails().size).toBe(0);
+  });
 });

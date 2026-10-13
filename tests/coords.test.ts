@@ -3,8 +3,11 @@ import {
   toMeters,
   fromMeters,
   formatDistance,
+  formatFeetInches,
   transformToWorld,
   transformBoundaryBox,
+  isValidBoundary,
+  evaluateBoundaryContainment,
 } from '../src/coords';
 
 describe('Coordinate Transforms and Unit Conversions', () => {
@@ -43,11 +46,17 @@ describe('Coordinate Transforms and Unit Conversions', () => {
       expect(formatDistance(2.5, 'metric')).toBe('2.5 m');
     });
 
-    it('formats imperial distances', () => {
-      const res = fromMeters(3.048, 'imperial');
-      expect(res.value).toBeCloseTo(10.0, 1);
-      expect(res.unitLabel).toBe('ft');
-      expect(formatDistance(3.048, 'imperial')).toBe('10.0 ft');
+    it('formats imperial distances in feet and inches', () => {
+      // 1 meter = ~3' 3"
+      expect(formatFeetInches(1.0)).toBe('3\' 3"');
+      expect(formatDistance(1.0, 'imperial')).toBe('3\' 3"');
+
+      // 3.048 meters = 10'
+      expect(formatFeetInches(3.048)).toBe("10'");
+      expect(formatDistance(3.048, 'imperial')).toBe("10'");
+
+      // Small distance < 1 ft
+      expect(formatFeetInches(0.1524)).toBe('6"');
     });
   });
 
@@ -128,8 +137,40 @@ describe('Coordinate Transforms and Unit Conversions', () => {
     });
   });
 
-  describe('Detection Boundary Box Transforms', () => {
-    it('computes 4 world corners for boundary box with defaults', () => {
+  describe('Detection Boundary Validation and Containment', () => {
+    it('validates detection boundary correctly and rejects invalid or reversed ranges', () => {
+      expect(isValidBoundary(undefined)).toBe(false);
+      expect(isValidBoundary({ minX: 0, maxX: 100, minY: 0 } as any)).toBe(false);
+      // Reversed x
+      expect(isValidBoundary({ minX: 100, maxX: 0, minY: 0, maxY: 100 })).toBe(false);
+      // Reversed y
+      expect(isValidBoundary({ minX: -50, maxX: 50, minY: 100, maxY: 0 })).toBe(false);
+      // Reversed z
+      expect(
+        isValidBoundary({ minX: -50, maxX: 50, minY: 0, maxY: 100, minZ: 200, maxZ: 100 })
+      ).toBe(false);
+      // Valid
+      expect(isValidBoundary({ minX: -50, maxX: 50, minY: 0, maxY: 100 })).toBe(true);
+      expect(isValidBoundary({ minX: -50, maxX: 50, minY: 0, maxY: 100, minZ: 0, maxZ: 200 })).toBe(
+        true
+      );
+    });
+
+    it('evaluates 2D and 3D containment correctly', () => {
+      const b2D = { minX: -100, maxX: 100, minY: 0, maxY: 200 };
+      expect(evaluateBoundaryContainment({ x: 0, y: 100 }, b2D)).toBe('inside');
+      expect(evaluateBoundaryContainment({ x: 150, y: 100 }, b2D)).toBe('outside');
+
+      const b3D = { minX: -100, maxX: 100, minY: 0, maxY: 200, minZ: -50, maxZ: 150 };
+      // Inside 3D
+      expect(evaluateBoundaryContainment({ x: 0, y: 100, z: 20 }, b3D)).toBe('inside');
+      // Outside 3D because of height
+      expect(evaluateBoundaryContainment({ x: 0, y: 100, z: 200 }, b3D)).toBe('outside');
+      // Missing target z coordinate when 3D boundary is configured -> unverified
+      expect(evaluateBoundaryContainment({ x: 0, y: 100 }, b3D)).toBe('unverified');
+    });
+
+    it('computes 4 world corners for valid boundary box and empty array for invalid', () => {
       const boundary = {
         minX: -100,
         maxX: 100,
@@ -148,12 +189,8 @@ describe('Coordinate Transforms and Unit Conversions', () => {
       expect(corners[1]).toEqual({ x: 1.0, y: 0.5 });
       expect(corners[2]).toEqual({ x: 1.0, y: 2.5 });
       expect(corners[3]).toEqual({ x: -1.0, y: 2.5 });
-    });
 
-    it('handles empty boundary object with 0 defaults', () => {
-      const corners = transformBoundaryBox({}, {});
-      expect(corners).toHaveLength(4);
-      expect(corners[0]).toEqual({ x: 0, y: 0 });
+      expect(transformBoundaryBox({ minX: 100, maxX: 0, minY: 0, maxY: 100 }, {})).toEqual([]);
     });
   });
 });

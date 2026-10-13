@@ -206,6 +206,127 @@ describe('PresenceMapCard Web Component Lifecycle and HA Integration', () => {
     document.body.removeChild(card);
   });
 
+  it('re-renders when a boundary entity changes even if target data has not changed', () => {
+    const card = document.createElement('presence-map-card') as PresenceMapCard;
+    card.setConfig({
+      type: 'custom:presence-map-card',
+      sensors: [
+        {
+          id: 's1',
+          name: 'Garage Radar',
+          targets_entity: 'sensor.garage_targets',
+          boundary_prefix: 'number.garage_lights_mmwave_',
+        },
+      ],
+    });
+
+    const currentIso = new Date().toISOString();
+    const initialHass: HomeAssistant = {
+      states: {
+        'sensor.garage_targets': {
+          entity_id: 'sensor.garage_targets',
+          state: '1',
+          attributes: { targets: [{ x: 50, y: 150, target_id: 1 }] },
+          last_changed: currentIso,
+          last_updated: currentIso,
+        },
+        'number.garage_lights_mmwave_width_minimum_left': {
+          entity_id: 'number.garage_lights_mmwave_width_minimum_left',
+          state: '-100',
+          attributes: {},
+          last_changed: currentIso,
+          last_updated: currentIso,
+        },
+        'number.garage_lights_mmwave_width_maximum_right': {
+          entity_id: 'number.garage_lights_mmwave_width_maximum_right',
+          state: '100',
+          attributes: {},
+          last_changed: currentIso,
+          last_updated: currentIso,
+        },
+        'number.garage_lights_mmwave_depth_minimum_near': {
+          entity_id: 'number.garage_lights_mmwave_depth_minimum_near',
+          state: '10',
+          attributes: {},
+          last_changed: currentIso,
+          last_updated: currentIso,
+        },
+        'number.garage_lights_mmwave_depth_maximum_far': {
+          entity_id: 'number.garage_lights_mmwave_depth_maximum_far',
+          state: '300',
+          attributes: {},
+          last_changed: currentIso,
+          last_updated: currentIso,
+        },
+      },
+    };
+
+    card.hass = initialHass;
+
+    const renderSpy = vi.spyOn(card as any, '_render');
+
+    // Update only the depth_maximum_far boundary entity
+    const updatedHass: HomeAssistant = {
+      states: {
+        ...initialHass.states,
+        'number.garage_lights_mmwave_depth_maximum_far': {
+          entity_id: 'number.garage_lights_mmwave_depth_maximum_far',
+          state: '500',
+          attributes: {},
+          last_changed: new Date().toISOString(),
+          last_updated: new Date().toISOString(),
+        },
+      },
+    };
+
+    card.hass = updatedHass;
+    expect(renderSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('marks targets as visibly stale via periodic timer without incoming entity updates', () => {
+    const card = document.createElement('presence-map-card') as PresenceMapCard;
+    card.setConfig({
+      type: 'custom:presence-map-card',
+      stale_timeout: 10,
+      show_labels: true,
+      sensors: [
+        {
+          id: 's1',
+          name: 'Garage Radar',
+          targets_entity: 'sensor.garage_targets',
+        },
+      ],
+    });
+
+    document.body.appendChild(card);
+
+    const initialIso = new Date().toISOString();
+    card.hass = {
+      states: {
+        'sensor.garage_targets': {
+          entity_id: 'sensor.garage_targets',
+          state: '1',
+          attributes: { targets: [{ x: 50, y: 150, target_id: 1 }] },
+          last_changed: initialIso,
+          last_updated: initialIso,
+        },
+      },
+    };
+
+    // Initially target is live
+    expect(card.shadowRoot?.innerHTML).toContain('target-live');
+    expect(card.shadowRoot?.innerHTML).not.toContain('target-stale');
+
+    // Advance fake timers by 15 seconds without updating card.hass
+    vi.advanceTimersByTime(15000);
+
+    // Target should now be rendered as stale with stale indicator
+    expect(card.shadowRoot?.innerHTML).toContain('target-stale');
+    expect(card.shadowRoot?.innerHTML).toContain('stale');
+
+    document.body.removeChild(card);
+  });
+
   it('returns valid card size estimate', () => {
     const card = document.createElement('presence-map-card') as PresenceMapCard;
     expect(card.getCardSize()).toBeGreaterThanOrEqual(4);

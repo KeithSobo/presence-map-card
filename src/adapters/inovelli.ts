@@ -5,14 +5,16 @@ import {
   Target,
   RawTargetData,
   DetectionBoundary,
+  OccupancyStatus,
+  ReportingStatus,
 } from '../types';
-import { transformToWorld } from '../coords';
+import { transformToWorld, isValidBoundary, evaluateBoundaryContainment } from '../coords';
 
 export interface SensorParseResult {
   sensorId: string;
   available: boolean;
-  occupancy: boolean | null; // null if not configured
-  reportingEnabled: boolean;
+  occupancyStatus: OccupancyStatus;
+  reportingStatus: ReportingStatus;
   targets: Target[];
   boundary?: DetectionBoundary;
   timestamp: number;
@@ -20,6 +22,56 @@ export interface SensorParseResult {
 }
 
 export class InovelliZhaAdapter {
+  /**
+   * Suffix lists for Inovelli and generic presence detection boundary entities.
+   * Priority: Inovelli standard suffixes first, followed by generic mmWave suffixes.
+   */
+  public static readonly BOUNDARY_SUFFIXES = {
+    minX: ['width_minimum_left', 'min_x', 'x_min', 'boundary_min_x', 'zone1_x_min'],
+    maxX: ['width_maximum_right', 'max_x', 'x_max', 'boundary_max_x', 'zone1_x_max'],
+    minY: ['depth_minimum_near', 'min_y', 'y_min', 'boundary_min_y', 'zone1_y_min'],
+    maxY: ['depth_maximum_far', 'max_y', 'y_max', 'boundary_max_y', 'zone1_y_max'],
+    minZ: ['height_minimum_floor', 'min_z', 'z_min', 'boundary_min_z'],
+    maxZ: ['height_maximum_ceiling', 'max_z', 'z_max', 'boundary_max_z'],
+  };
+
+  /**
+   * Returns all entity IDs that could affect this sensor (targets, occupancy, reporting, and all boundary entities).
+   */
+  public static getMonitoredEntityIds(sensor: SensorConfig): string[] {
+    const ids = new Set<string>();
+
+    if (sensor.targets_entity) ids.add(sensor.targets_entity);
+    if (sensor.occupancy_entity) ids.add(sensor.occupancy_entity);
+    if (sensor.reporting_entity) ids.add(sensor.reporting_entity);
+
+    // Explicit boundary overrides
+    if (sensor.boundary_min_x_entity) ids.add(sensor.boundary_min_x_entity);
+    if (sensor.boundary_max_x_entity) ids.add(sensor.boundary_max_x_entity);
+    if (sensor.boundary_min_y_entity) ids.add(sensor.boundary_min_y_entity);
+    if (sensor.boundary_max_y_entity) ids.add(sensor.boundary_max_y_entity);
+    if (sensor.boundary_min_z_entity) ids.add(sensor.boundary_min_z_entity);
+    if (sensor.boundary_max_z_entity) ids.add(sensor.boundary_max_z_entity);
+
+    // Prefix-discovered boundary entities
+    if (sensor.boundary_prefix) {
+      const prefix = sensor.boundary_prefix;
+      const allSuffixes = [
+        ...this.BOUNDARY_SUFFIXES.minX,
+        ...this.BOUNDARY_SUFFIXES.maxX,
+        ...this.BOUNDARY_SUFFIXES.minY,
+        ...this.BOUNDARY_SUFFIXES.maxY,
+        ...this.BOUNDARY_SUFFIXES.minZ,
+        ...this.BOUNDARY_SUFFIXES.maxZ,
+      ];
+      for (const suffix of allSuffixes) {
+        ids.add(`${prefix}${suffix}`);
+      }
+    }
+
+    return Array.from(ids);
+  }
+
   /**
    * Safely parses target items from various attribute formats (Array, JSON string, or malformed).
    */
@@ -83,7 +135,7 @@ export class InovelliZhaAdapter {
 
   /**
    * Resolves entity timestamp in milliseconds.
-   * Prioritizes explicit target timestamp, then entity last_updated, fallback to current time.
+   * Prioritizes explicit target timestamp, then entity last_target_update, fallback to last_updated or now.
    */
   public static resolveTimestamp(
     rawTarget: RawTargetData,
@@ -112,39 +164,119 @@ export class InovelliZhaAdapter {
   }
 
   /**
-   * Reads optional detection boundaries from number entities matching boundary_prefix or entity attributes.
+   * Reads a numeric value from an entity ID if present, valid, and not unavailable.
+   */
+  private static readEntityNumber(
+    entityId: string | undefined,
+    hass: HomeAssistant
+  ): number | undefined {
+    if (!entityId) return undefined;
+    const stateObj = hass.states[entityId];
+    if (stateObj && stateObj.state && !['unavailable', 'unknown'].includes(stateObj.state)) {
+      const val = parseFloat(stateObj.state);
+      if (Number.isFinite(val)) return val;
+    }
+    return undefined;
+  }
+
+  /**
+   * Extracts detection boundaries with explicit override precedence over prefix discovery.
+   * Requires all 4 valid x/y bounds. Rejects reversed ranges.
    */
   public static extractBoundary(
     sensor: SensorConfig,
     hass: HomeAssistant
   ): DetectionBoundary | undefined {
-    if (!sensor.boundary_prefix) {
-      return undefined;
-    }
+    const resolveBound = (
+      explicitEntity: string | undefined,
+      suffixes: string[]
+    ): number | undefined => {
+      // 1. Explicit override takes precedence
+      if (explicitEntity) {
+        const val = this.readEntityNumber(explicitEntity, hass);
+        if (val !== undefined) return val;
+      }
 
-    const prefix = sensor.boundary_prefix;
-    const findNumber = (...suffixes: string[]): number | undefined => {
-      for (const suffix of suffixes) {
-        const entityId = `${prefix}${suffix}`;
-        const stateObj = hass.states[entityId];
-        if (stateObj && stateObj.state && !['unavailable', 'unknown'].includes(stateObj.state)) {
-          const val = parseFloat(stateObj.state);
-          if (Number.isFinite(val)) return val;
+      // 2. Prefix discovery
+      if (sensor.boundary_prefix) {
+        const prefix = sensor.boundary_prefix;
+        for (const suffix of suffixes) {
+          const val = this.readEntityNumber(`${prefix}${suffix}`, hass);
+          if (val !== undefined) return val;
         }
       }
+
       return undefined;
     };
 
-    const minX = findNumber('x_min', 'min_x', 'boundary_min_x', 'zone1_x_min');
-    const maxX = findNumber('x_max', 'max_x', 'boundary_max_x', 'zone1_x_max');
-    const minY = findNumber('y_min', 'min_y', 'boundary_min_y', 'zone1_y_min');
-    const maxY = findNumber('y_max', 'max_y', 'boundary_max_y', 'zone1_y_max');
+    const minX = resolveBound(sensor.boundary_min_x_entity, this.BOUNDARY_SUFFIXES.minX);
+    const maxX = resolveBound(sensor.boundary_max_x_entity, this.BOUNDARY_SUFFIXES.maxX);
+    const minY = resolveBound(sensor.boundary_min_y_entity, this.BOUNDARY_SUFFIXES.minY);
+    const maxY = resolveBound(sensor.boundary_max_y_entity, this.BOUNDARY_SUFFIXES.maxY);
 
-    if (minX !== undefined || maxX !== undefined || minY !== undefined || maxY !== undefined) {
-      return { minX, maxX, minY, maxY };
+    // Require all 4 x/y boundaries
+    if (minX === undefined || maxX === undefined || minY === undefined || maxY === undefined) {
+      return undefined;
     }
 
-    return undefined;
+    const minZ = resolveBound(sensor.boundary_min_z_entity, this.BOUNDARY_SUFFIXES.minZ);
+    const maxZ = resolveBound(sensor.boundary_max_z_entity, this.BOUNDARY_SUFFIXES.maxZ);
+
+    const boundary: DetectionBoundary = {
+      minX,
+      maxX,
+      minY,
+      maxY,
+      minZ,
+      maxZ,
+      sourceUnits: sensor.source_units ?? 'cm',
+    };
+
+    if (!isValidBoundary(boundary)) {
+      return undefined;
+    }
+
+    return boundary;
+  }
+
+  /**
+   * Parses occupancy sensor state into 'occupied', 'clear', or 'unknown'.
+   */
+  public static parseOccupancy(sensor: SensorConfig, hass: HomeAssistant): OccupancyStatus {
+    if (!sensor.occupancy_entity) {
+      return 'unknown';
+    }
+    const occState = hass.states[sensor.occupancy_entity];
+    if (!occState || ['unavailable', 'unknown'].includes(occState.state)) {
+      return 'unknown';
+    }
+    if (occState.state === 'on') {
+      return 'occupied';
+    }
+    if (occState.state === 'off') {
+      return 'clear';
+    }
+    return 'unknown';
+  }
+
+  /**
+   * Parses reporting switch state into 'enabled', 'disabled', or 'unknown'.
+   */
+  public static parseReporting(sensor: SensorConfig, hass: HomeAssistant): ReportingStatus {
+    if (!sensor.reporting_entity) {
+      return 'enabled';
+    }
+    const repState = hass.states[sensor.reporting_entity];
+    if (!repState || ['unavailable', 'unknown'].includes(repState.state)) {
+      return 'unknown';
+    }
+    if (repState.state === 'on') {
+      return 'enabled';
+    }
+    if (repState.state === 'off') {
+      return 'disabled';
+    }
+    return 'unknown';
   }
 
   /**
@@ -158,46 +290,31 @@ export class InovelliZhaAdapter {
     const targetEntityId = sensor.targets_entity;
     const targetState = hass.states[targetEntityId];
 
+    const occupancyStatus = this.parseOccupancy(sensor, hass);
+    const reportingStatus = this.parseReporting(sensor, hass);
+    const boundary = this.extractBoundary(sensor, hass);
+
     if (!targetState || ['unavailable', 'unknown'].includes(targetState.state)) {
       return {
         sensorId: sensor.id,
         available: false,
-        occupancy: null,
-        reportingEnabled: true,
+        occupancyStatus,
+        reportingStatus,
         targets: [],
+        boundary,
         timestamp: now,
         error: `Entity ${targetEntityId || 'unconfigured'} is unavailable or not found`,
       };
     }
 
-    // Check reporting switch if configured
-    let reportingEnabled = true;
-    if (sensor.reporting_entity) {
-      const reportingState = hass.states[sensor.reporting_entity];
-      if (reportingState && reportingState.state === 'off') {
-        reportingEnabled = false;
-      }
-    }
-
-    // Check occupancy binary sensor if configured
-    let occupancy: boolean | null = null;
-    if (sensor.occupancy_entity) {
-      const occState = hass.states[sensor.occupancy_entity];
-      if (occState) {
-        occupancy = occState.state === 'on';
-      }
-    }
-
-    // Extract boundaries
-    const boundary = this.extractBoundary(sensor, hass);
-
-    // If reporting is disabled or occupancy is explicitly cleared (false), return no active targets
-    if (!reportingEnabled || occupancy === false) {
+    // Only clear targets if occupancy is explicitly clear ('off') or reporting is explicitly disabled ('off').
+    // Unknown occupancy or unknown reporting MUST NOT erase valid fresh coordinates!
+    if (occupancyStatus === 'clear' || reportingStatus === 'disabled') {
       return {
         sensorId: sensor.id,
         available: true,
-        occupancy,
-        reportingEnabled,
+        occupancyStatus,
+        reportingStatus,
         targets: [],
         boundary,
         timestamp: now,
@@ -221,11 +338,20 @@ export class InovelliZhaAdapter {
       const ts = this.resolveTimestamp(raw, targetState, now);
       const scopedId = `${sensor.id}:${raw.target_id}`;
 
+      // Evaluate inside/outside boundary status in sensor's source coordinate system and units
+      const boundaryStatus = evaluateBoundaryContainment(
+        { x: raw.x, y: raw.y, z: raw.z },
+        boundary
+      );
+
       return {
         scopedId,
         sensorId: sensor.id,
         sensorColor: sensor.color || '#03a9f4',
         rawTargetId: raw.target_id,
+        sourceX: raw.x,
+        sourceY: raw.y,
+        sourceZ: raw.z,
         x: localX,
         y: localY,
         z:
@@ -239,14 +365,15 @@ export class InovelliZhaAdapter {
         dop: raw.dop,
         timestamp: ts,
         isStale: false,
+        boundaryStatus,
       };
     });
 
     return {
       sensorId: sensor.id,
       available: true,
-      occupancy,
-      reportingEnabled,
+      occupancyStatus,
+      reportingStatus,
       targets,
       boundary,
       timestamp: now,

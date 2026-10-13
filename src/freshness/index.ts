@@ -32,9 +32,9 @@ export class TargetFreshnessManager {
   }
 
   /**
-   * Updates state with a new set of incoming targets from sensors.
-   * Targets belong to specific sensors; if clearedSensorIds is provided,
-   * any active targets for those sensors are removed.
+   * Updates state with incoming targets from sensors.
+   * If clearedSensorIds is provided (occupancy explicitly cleared or reporting disabled),
+   * any targets for those sensors are removed immediately.
    */
   public update(incomingTargets: Target[], now: number, clearedSensorIds: string[] = []): void {
     // 1. Remove targets from sensors whose occupancy cleared or reporting stopped
@@ -47,14 +47,18 @@ export class TargetFreshnessManager {
       }
     }
 
-    // 2. Add or update incoming targets
+    // 2. Add or update incoming targets without modifying their original report timestamps
     const staleMs = this.options.staleTimeoutSeconds * 1000;
 
     for (const target of incomingTargets) {
-      const isStale = now - target.timestamp > staleMs;
+      const ageMs = now - target.timestamp;
+      const isStale = ageMs > staleMs;
+      const ageSeconds = Math.max(0, Math.round(ageMs / 1000));
+
       const targetWithStaleness: Target = {
         ...target,
         isStale,
+        ageSeconds,
       };
 
       this.activeTargets.set(target.scopedId, targetWithStaleness);
@@ -94,17 +98,19 @@ export class TargetFreshnessManager {
   }
 
   /**
-   * Prunes stale targets and expired trail history.
-   * Called on incoming updates and periodically by the card timer.
+   * Prunes stale targets, updates age on last-known positions, and expires trails.
+   * Called periodically by the card background ticker.
    */
   public prune(now: number): void {
     const staleMs = this.options.staleTimeoutSeconds * 1000;
     const dropMs = staleMs * 2; // Drop targets after 2x stale timeout without updates
     const trailCutoff = now - this.options.trailHistorySeconds * 1000;
 
-    // Prune active targets
+    // Prune active targets and update staleness age
     for (const [scopedId, target] of this.activeTargets.entries()) {
       const age = now - target.timestamp;
+      target.ageSeconds = Math.max(0, Math.round(age / 1000));
+
       if (age > dropMs) {
         this.activeTargets.delete(scopedId);
       } else if (age > staleMs) {
@@ -114,7 +120,6 @@ export class TargetFreshnessManager {
 
     // Prune trails
     for (const [scopedId, trailList] of this.trails.entries()) {
-      // Remove points older than trail window
       const validPoints = trailList.filter(pt => pt.timestamp >= trailCutoff);
 
       if (validPoints.length === 0) {

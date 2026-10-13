@@ -83,6 +83,7 @@ export class PresenceMapEditor extends HTMLElement {
           { name: 'show_rings', label: 'Show Distance Rings', selector: { boolean: {} } },
           { name: 'show_trails', label: 'Show Target Trails', selector: { boolean: {} } },
           { name: 'show_labels', label: 'Show Target Labels', selector: { boolean: {} } },
+          { name: 'show_coordinates', label: 'Show X/Y Coordinates', selector: { boolean: {} } },
           { name: 'show_boundaries', label: 'Show Boundaries', selector: { boolean: {} } },
         ],
       },
@@ -127,17 +128,17 @@ export class PresenceMapEditor extends HTMLElement {
           },
           {
             name: 'sensor_occupancy_entity',
-            label: 'Occupancy Binary Sensor',
+            label: 'Occupancy Binary Sensor (Optional)',
             selector: { entity: { domain: 'binary_sensor' } },
           },
           {
             name: 'sensor_reporting_entity',
-            label: 'Reporting Switch',
-            selector: { entity: {} },
+            label: 'Reporting Switch (Optional - Enables radar reporting)',
+            selector: { entity: { domain: 'switch' } },
           },
           {
             name: 'sensor_boundary_prefix',
-            label: 'Boundary Entity Prefix (e.g. number.garage_)',
+            label: 'Boundary Entity Prefix (e.g. number.garage_lights_mmwave_)',
             selector: { text: {} },
           },
           {
@@ -168,7 +169,7 @@ export class PresenceMapEditor extends HTMLElement {
             schema: [
               {
                 name: 'sensor_fov',
-                label: 'Field of View (Degrees)',
+                label: 'Illustrative Field of View (Degrees)',
                 selector: { number: { mode: 'box', min: 30, max: 360 } },
               },
               {
@@ -192,6 +193,43 @@ export class PresenceMapEditor extends HTMLElement {
           },
         ],
       },
+      {
+        name: '',
+        type: 'expandable',
+        title: 'Explicit Boundary Overrides (Precedence over prefix)',
+        schema: [
+          {
+            name: 'sensor_boundary_min_x_entity',
+            label: 'Width Min Left / X Min',
+            selector: { entity: { domain: 'number' } },
+          },
+          {
+            name: 'sensor_boundary_max_x_entity',
+            label: 'Width Max Right / X Max',
+            selector: { entity: { domain: 'number' } },
+          },
+          {
+            name: 'sensor_boundary_min_y_entity',
+            label: 'Depth Min Near / Y Min',
+            selector: { entity: { domain: 'number' } },
+          },
+          {
+            name: 'sensor_boundary_max_y_entity',
+            label: 'Depth Max Far / Y Max',
+            selector: { entity: { domain: 'number' } },
+          },
+          {
+            name: 'sensor_boundary_min_z_entity',
+            label: 'Height Min Floor / Z Min (Optional)',
+            selector: { entity: { domain: 'number' } },
+          },
+          {
+            name: 'sensor_boundary_max_z_entity',
+            label: 'Height Max Ceiling / Z Max (Optional)',
+            selector: { entity: { domain: 'number' } },
+          },
+        ],
+      },
     ];
   }
 
@@ -207,6 +245,7 @@ export class PresenceMapEditor extends HTMLElement {
       show_rings: config.show_rings !== false,
       show_trails: config.show_trails !== false,
       show_labels: config.show_labels !== false,
+      show_coordinates: Boolean(config.show_coordinates),
       show_boundaries: config.show_boundaries !== false,
       demo_mode: Boolean(config.demo_mode),
       floorplan_image: config.floorplan?.image ?? '',
@@ -216,8 +255,14 @@ export class PresenceMapEditor extends HTMLElement {
       sensor_occupancy_entity: primarySensor?.occupancy_entity ?? '',
       sensor_reporting_entity: primarySensor?.reporting_entity ?? '',
       sensor_boundary_prefix: primarySensor?.boundary_prefix ?? '',
+      sensor_boundary_min_x_entity: primarySensor?.boundary_min_x_entity ?? '',
+      sensor_boundary_max_x_entity: primarySensor?.boundary_max_x_entity ?? '',
+      sensor_boundary_min_y_entity: primarySensor?.boundary_min_y_entity ?? '',
+      sensor_boundary_max_y_entity: primarySensor?.boundary_max_y_entity ?? '',
+      sensor_boundary_min_z_entity: primarySensor?.boundary_min_z_entity ?? '',
+      sensor_boundary_max_z_entity: primarySensor?.boundary_max_z_entity ?? '',
       sensor_source_units: primarySensor?.source_units ?? 'cm',
-      sensor_color: primarySensor?.color ?? '#03a9f4',
+      sensor_color: primarySensor?.color ?? '#0284c7',
       sensor_fov: primarySensor?.fov ?? 120,
       sensor_rotation: primarySensor?.rotation ?? 0,
       sensor_mirror_x: Boolean(primarySensor?.mirror_x),
@@ -237,6 +282,7 @@ export class PresenceMapEditor extends HTMLElement {
       show_rings: Boolean(formData.show_rings),
       show_trails: Boolean(formData.show_trails),
       show_labels: Boolean(formData.show_labels),
+      show_coordinates: Boolean(formData.show_coordinates),
       show_boundaries: Boolean(formData.show_boundaries),
       demo_mode: Boolean(formData.demo_mode),
     };
@@ -261,27 +307,27 @@ export class PresenceMapEditor extends HTMLElement {
         ? (formData.sensor_source_units as (typeof validUnits)[number])
         : 'cm';
 
+    const cleanStr = (val: unknown): string | undefined =>
+      typeof val === 'string' && val.trim() ? val.trim() : undefined;
+
     const updatedPrimary = {
       ...primary,
       targets_entity:
         typeof formData.sensor_targets_entity === 'string' ? formData.sensor_targets_entity : '',
-      occupancy_entity:
-        typeof formData.sensor_occupancy_entity === 'string' && formData.sensor_occupancy_entity
-          ? formData.sensor_occupancy_entity
-          : undefined,
-      reporting_entity:
-        typeof formData.sensor_reporting_entity === 'string' && formData.sensor_reporting_entity
-          ? formData.sensor_reporting_entity
-          : undefined,
-      boundary_prefix:
-        typeof formData.sensor_boundary_prefix === 'string' && formData.sensor_boundary_prefix
-          ? formData.sensor_boundary_prefix
-          : undefined,
+      occupancy_entity: cleanStr(formData.sensor_occupancy_entity),
+      reporting_entity: cleanStr(formData.sensor_reporting_entity),
+      boundary_prefix: cleanStr(formData.sensor_boundary_prefix),
+      boundary_min_x_entity: cleanStr(formData.sensor_boundary_min_x_entity),
+      boundary_max_x_entity: cleanStr(formData.sensor_boundary_max_x_entity),
+      boundary_min_y_entity: cleanStr(formData.sensor_boundary_min_y_entity),
+      boundary_max_y_entity: cleanStr(formData.sensor_boundary_max_y_entity),
+      boundary_min_z_entity: cleanStr(formData.sensor_boundary_min_z_entity),
+      boundary_max_z_entity: cleanStr(formData.sensor_boundary_max_z_entity),
       source_units: sourceUnits,
       color:
         typeof formData.sensor_color === 'string' && formData.sensor_color
           ? formData.sensor_color
-          : '#03a9f4',
+          : '#0284c7',
       fov: Number(formData.sensor_fov) || 120,
       rotation: Number(formData.sensor_rotation) || 0,
       mirror_x: Boolean(formData.sensor_mirror_x),

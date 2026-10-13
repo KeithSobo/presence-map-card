@@ -22,8 +22,10 @@ export function createDemoTargets(now: number, stepIndex: number = 0): Target[] 
     {
       scopedId: 'demo_sensor_1:1',
       sensorId: 'demo_sensor_1',
-      sensorColor: '#03a9f4',
+      sensorColor: '#0284c7',
       rawTargetId: 1,
+      sourceX: Math.round(s1x * 100),
+      sourceY: Math.round(s1y * 100),
       x: s1x,
       y: s1y,
       worldX: s1x,
@@ -31,12 +33,15 @@ export function createDemoTargets(now: number, stepIndex: number = 0): Target[] 
       dop: dop1,
       timestamp: now,
       isStale: false,
+      boundaryStatus: 'inside',
     },
     {
       scopedId: 'demo_sensor_2:1',
       sensorId: 'demo_sensor_2',
-      sensorColor: '#4caf50',
+      sensorColor: '#10b981',
       rawTargetId: 1,
+      sourceX: Math.round(s2x * 100),
+      sourceY: Math.round(s2y * 100),
       x: s2x,
       y: s2y,
       // Transformed by sensor 2 placement (x: 2.5, y: 1.5, rot: 90)
@@ -45,6 +50,7 @@ export function createDemoTargets(now: number, stepIndex: number = 0): Target[] 
       dop: dop2,
       timestamp: now,
       isStale: false,
+      boundaryStatus: 'inside',
     },
   ];
 

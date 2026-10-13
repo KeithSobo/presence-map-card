@@ -5,7 +5,7 @@ import {
   DisplayUnits,
   DetectionBoundary,
 } from '../types';
-import { formatDistance, transformBoundaryBox } from '../coords';
+import { formatDistance, transformBoundaryBox, isValidBoundary } from '../coords';
 
 export interface RenderContext {
   config: PresenceMapCardConfig;
@@ -24,14 +24,14 @@ export function renderSvg(ctx: RenderContext): string {
   const width = 800;
   const height = isFloorplan ? 600 : 700;
 
-  // Theme-aware color variables
-  const bgColor = isDark ? '#1a1c1e' : '#f8f9fa';
-  const gridColor = isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.12)';
-  const textColor = isDark ? '#e0e0e0' : '#424242';
-  const secondaryTextColor = isDark ? '#9e9e9e' : '#757575';
-  const ringColor = isDark ? 'rgba(255, 255, 255, 0.18)' : 'rgba(0, 0, 0, 0.15)';
-  const boundaryBorderColor = '#ff5722';
-  const boundaryFillColor = isDark ? 'rgba(255, 87, 34, 0.15)' : 'rgba(255, 87, 34, 0.1)';
+  // Theme-aware, high-contrast, fully valid CSS colors
+  const bgColor = isDark ? '#111827' : '#f8fafc';
+  const gridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.07)';
+  const textColor = isDark ? '#f8fafc' : '#0f172a';
+  const secondaryTextColor = isDark ? '#94a3b8' : '#475569';
+  const ringColor = isDark ? 'rgba(255, 255, 255, 0.16)' : 'rgba(0, 0, 0, 0.14)';
+  const boundaryBorderColor = '#0284c7';
+  const boundaryFillColor = isDark ? 'rgba(2, 132, 199, 0.15)' : 'rgba(2, 132, 199, 0.08)';
 
   // Scale and projection setup
   let projectX: (worldX: number) => number;
@@ -52,7 +52,6 @@ export function renderSvg(ctx: RenderContext): string {
   } else {
     // Radar mode centered
     const maxRange = config.range_meters || 6;
-    // Position radar origin toward center-bottom for standard 120-deg forward sensors, or center
     const hasSingleForwardSensor =
       config.sensors?.length === 1 && (config.sensors[0].fov || 120) <= 180;
     originX = width / 2;
@@ -93,13 +92,13 @@ export function renderSvg(ctx: RenderContext): string {
       <image href="${config.floorplan.image}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="xMidYMid meet" opacity="${isDark ? '0.75' : '0.85'}" />
     `);
   } else {
-    // Subtle grid background for radar mode
+    // Grid background for radar mode
     svgParts.push(`
       <rect width="${width}" height="${height}" fill="url(#radarGrid)" opacity="0.6" />
     `);
   }
 
-  // Range rings (in radar mode or optional in floorplan mode)
+  // Range rings (in radar mode)
   if (config.show_rings !== false && !isFloorplan) {
     const range = config.range_meters || 6;
     const ringStep = range <= 4 ? 1 : range <= 8 ? 2 : 3;
@@ -116,15 +115,15 @@ export function renderSvg(ctx: RenderContext): string {
 
       svgParts.push(`
         <circle cx="${originX}" cy="${originY}" r="${radiusPx}" fill="none" stroke="${ringColor}" stroke-width="1" stroke-dasharray="4 4" />
-        <text x="${originX + 6}" y="${originY - radiusPx + 14}" fill="${secondaryTextColor}" font-size="11" font-family="system-ui, sans-serif" font-weight="500">${labelText}</text>
+        <text x="${originX + 6}" y="${originY - radiusPx + 14}" fill="${secondaryTextColor}" font-size="11" font-family="system-ui, -apple-system, sans-serif" font-weight="600">${labelText}</text>
       `);
     }
   }
 
-  // Sensor FOV Cones and Markers
+  // Sensor FOV Cones, Position Markers, and Boundaries
   const sensors = config.sensors || [];
   sensors.forEach(sensor => {
-    const sensorColor = sensor.color || '#03a9f4';
+    const sensorColor = sensor.color || '#0284c7';
     const sPosX = isFloorplan ? (sensor.position?.x ?? 0) : 0;
     const sPosY = isFloorplan ? (sensor.position?.y ?? 0) : 0;
     const px = projectX(sPosX);
@@ -135,10 +134,9 @@ export function renderSvg(ctx: RenderContext): string {
     const radiusPx = sensorRange * scalePxPerMeter;
     const rotDeg = sensor.rotation || 0;
 
-    // FOV cone sector path
+    // Illustrative FOV coverage cone (not an absolute limit)
     if (fov < 360 && radiusPx > 0) {
       const halfFov = fov / 2;
-      // In SVG canvas, angle 0 is facing up (negative Y in radar mode, or negative Y in floorplan)
       const startAngleDeg = rotDeg - halfFov;
       const endAngleDeg = rotDeg + halfFov;
 
@@ -151,9 +149,31 @@ export function renderSvg(ctx: RenderContext): string {
 
       svgParts.push(`
         <path d="M ${px} ${py} L ${x1} ${y1} A ${radiusPx} ${radiusPx} 0 ${largeArc} 1 ${x2} ${y2} Z"
-              fill="${sensorColor}" fill-opacity="${isDark ? '0.08' : '0.05'}"
-              stroke="${sensorColor}" stroke-opacity="0.3" stroke-width="1" stroke-dasharray="2 2" />
+              fill="${sensorColor}" fill-opacity="${isDark ? '0.07' : '0.04'}"
+              stroke="${sensorColor}" stroke-opacity="0.3" stroke-width="1" stroke-dasharray="3 3" />
       `);
+    }
+
+    // Render Detection Boundaries if configured and enabled
+    if (config.show_boundaries !== false) {
+      const boundary = boundaries.get(sensor.id);
+      if (boundary && isValidBoundary(boundary)) {
+        const corners = transformBoundaryBox(boundary, {
+          position: sensor.position,
+          rotation: sensor.rotation,
+          mirrorX: sensor.mirror_x,
+          mirrorY: sensor.mirror_y,
+          sourceUnits: sensor.source_units,
+        });
+
+        if (corners.length === 4) {
+          const pointsAttr = corners.map(pt => `${projectX(pt.x)},${projectY(pt.y)}`).join(' ');
+          svgParts.push(`
+            <polygon points="${pointsAttr}" fill="${boundaryFillColor}" stroke="${boundaryBorderColor}" stroke-width="1.8" stroke-dasharray="4 3" />
+            <text x="${projectX(corners[0].x) + 6}" y="${projectY(corners[0].y) - 6}" fill="${boundaryBorderColor}" font-size="10" font-family="system-ui, sans-serif" font-weight="600">Detection Zone</text>
+          `);
+        }
+      }
     }
 
     // Sensor Marker icon (triangle pointing in rotation direction)
@@ -176,25 +196,6 @@ export function renderSvg(ctx: RenderContext): string {
         <text x="${px}" y="${py + 18}" text-anchor="middle" fill="${secondaryTextColor}" font-size="10" font-family="system-ui, sans-serif" font-weight="600">${sensor.name}</text>
       `);
     }
-
-    // Render Detection Boundaries if configured and enabled
-    if (config.show_boundaries !== false) {
-      const boundary = boundaries.get(sensor.id);
-      if (boundary) {
-        const corners = transformBoundaryBox(boundary, {
-          position: sensor.position,
-          rotation: sensor.rotation,
-          mirrorX: sensor.mirror_x,
-          mirrorY: sensor.mirror_y,
-          sourceUnits: sensor.source_units,
-        });
-
-        const pointsAttr = corners.map(pt => `${projectX(pt.x)},${projectY(pt.y)}`).join(' ');
-        svgParts.push(`
-          <polygon points="${pointsAttr}" fill="${boundaryFillColor}" stroke="${boundaryBorderColor}" stroke-width="1.5" stroke-dasharray="4 3" />
-        `);
-      }
-    }
   });
 
   // Trails Layer
@@ -203,7 +204,7 @@ export function renderSvg(ctx: RenderContext): string {
       if (trailList.length < 2) continue;
 
       const target = targets.find(t => t.scopedId === scopedId);
-      const color = target ? target.sensorColor : '#03a9f4';
+      const color = target ? target.sensorColor : '#0284c7';
 
       for (let i = 0; i < trailList.length - 1; i++) {
         const p1 = trailList[i];
@@ -221,22 +222,42 @@ export function renderSvg(ctx: RenderContext): string {
     }
   }
 
-  // Active Targets Layer
+  // Active & Stale Targets Layer
   for (const target of targets) {
     const tx = projectX(target.worldX);
     const ty = projectY(target.worldY);
-    const color = target.sensorColor || '#03a9f4';
     const isStale = target.isStale;
 
-    const fillOpacity = isStale ? '0.35' : '0.9';
-    const strokeColor = isStale ? secondaryTextColor : '#ffffff';
+    // Inside / Outside / Unverified boundary styling
+    let dotFillColor = target.sensorColor || '#0284c7';
+    let dotStrokeColor = '#ffffff';
+    const strokeWidth = '2';
+    let strokeDasharray = 'none';
+
+    if (target.boundaryStatus === 'inside') {
+      dotFillColor = '#10b981'; // Verified Inside: emerald green
+    } else if (target.boundaryStatus === 'outside') {
+      dotFillColor = '#f59e0b'; // Outside: amber warning
+    } else if (target.boundaryStatus === 'unverified') {
+      dotFillColor = target.sensorColor || '#0284c7';
+      dotStrokeColor = '#f59e0b';
+      strokeDasharray = '3 2';
+    }
+
+    if (isStale) {
+      dotFillColor = isDark ? '#4b5563' : '#9ca3af'; // Visibly stale muted color
+      dotStrokeColor = isDark ? '#374151' : '#d1d5db';
+      strokeDasharray = '2 2';
+    }
+
+    const fillOpacity = isStale ? '0.5' : '0.95';
 
     svgParts.push(`
-      <g class="presence-target" data-target-id="${target.scopedId}">
-        <!-- Pulse ring for active targets -->
+      <g class="presence-target ${isStale ? 'target-stale' : 'target-live'}" data-target-id="${target.scopedId}">
+        <!-- Pulse ring for active fresh targets -->
         ${
           !isStale
-            ? `<circle cx="${tx}" cy="${ty}" r="15" fill="${color}" fill-opacity="0.25" filter="url(#glow)">
+            ? `<circle cx="${tx}" cy="${ty}" r="15" fill="${dotFillColor}" fill-opacity="0.25" filter="url(#glow)">
                  <animate attributeName="r" values="8;16;8" dur="2s" repeatCount="indefinite" />
                  <animate attributeName="opacity" values="0.6;0.1;0.6" dur="2s" repeatCount="indefinite" />
                </circle>`
@@ -244,28 +265,48 @@ export function renderSvg(ctx: RenderContext): string {
         }
 
         <!-- Center Target Dot -->
-        <circle cx="${tx}" cy="${ty}" r="7" fill="${color}" fill-opacity="${fillOpacity}" stroke="${strokeColor}" stroke-width="2" />
+        <circle cx="${tx}" cy="${ty}" r="7" fill="${dotFillColor}" fill-opacity="${fillOpacity}" stroke="${dotStrokeColor}" stroke-width="${strokeWidth}" stroke-dasharray="${strokeDasharray}" />
     `);
 
-    // Doppler indicator arrow (if dop available and moving)
+    // Doppler indicator chevron (if moving)
     if (target.dop !== undefined && Math.abs(target.dop) > 5 && !isStale) {
       const isApproaching = target.dop > 0;
       const arrowLength = 12;
-      // Direction toward or away from sensor
       const arrowDy = isApproaching ? arrowLength : -arrowLength;
       svgParts.push(`
         <path d="M ${tx} ${ty - arrowDy} L ${tx - 4} ${ty - arrowDy + (isApproaching ? -4 : 4)} M ${tx} ${ty - arrowDy} L ${tx + 4} ${ty - arrowDy + (isApproaching ? -4 : 4)}"
-              stroke="${strokeColor}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+              stroke="${dotStrokeColor}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
       `);
     }
 
-    // Target Label (e.g. "T1")
+    // Target Labels
     if (config.show_labels !== false) {
-      const labelText = `T${target.rawTargetId}`;
+      let mainLabel = `T${target.rawTargetId}`;
+      if (isStale && target.ageSeconds !== undefined) {
+        mainLabel += ` (stale ${target.ageSeconds}s)`;
+      }
+
+      const labelBadgeBg = isDark ? 'rgba(15, 23, 42, 0.85)' : 'rgba(255, 255, 255, 0.9)';
+      const labelBadgeText = textColor;
+      const labelBadgeWidth = mainLabel.length * 7 + 10;
+
       svgParts.push(`
-        <rect x="${tx + 9}" y="${ty - 16}" width="${labelText.length * 8 + 6}" height="14" rx="3" fill="${isDark ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.85)'}" />
-        <text x="${tx + 12}" y="${ty - 5}" fill="${textColor}" font-size="10" font-family="system-ui, sans-serif" font-weight="700">${labelText}</text>
+        <rect x="${tx + 9}" y="${ty - 16}" width="${labelBadgeWidth}" height="14" rx="3" fill="${labelBadgeBg}" stroke="${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}" stroke-width="0.5" />
+        <text x="${tx + 13}" y="${ty - 5}" fill="${labelBadgeText}" font-size="9" font-family="system-ui, sans-serif" font-weight="700">${mainLabel}</text>
       `);
+
+      // Optional coordinates display (source coordinates e.g. cm)
+      if (config.show_coordinates) {
+        let coordText = `x:${Math.round(target.sourceX)} y:${Math.round(target.sourceY)}`;
+        if (target.sourceZ !== undefined) {
+          coordText += ` z:${Math.round(target.sourceZ)}`;
+        }
+        const coordWidth = coordText.length * 6 + 8;
+        svgParts.push(`
+          <rect x="${tx + 9}" y="${ty + 1}" width="${coordWidth}" height="12" rx="2" fill="${labelBadgeBg}" />
+          <text x="${tx + 13}" y="${ty + 10}" fill="${secondaryTextColor}" font-size="8" font-family="monospace">${coordText}</text>
+        `);
+      }
     }
 
     svgParts.push(`</g>`);
@@ -275,7 +316,7 @@ export function renderSvg(ctx: RenderContext): string {
   if (demoMode) {
     svgParts.push(`
       <g class="demo-badge">
-        <rect x="${width - 190}" y="12" width="178" height="26" rx="13" fill="#ff9800" fill-opacity="0.9" />
+        <rect x="${width - 190}" y="12" width="178" height="26" rx="13" fill="#f59e0b" fill-opacity="0.9" />
         <text x="${width - 101}" y="29" text-anchor="middle" fill="#ffffff" font-size="11" font-family="system-ui, sans-serif" font-weight="bold">
           DEMO (Simulated Data)
         </text>
@@ -283,12 +324,18 @@ export function renderSvg(ctx: RenderContext): string {
     `);
   }
 
-  // Active target count footer
+  // Status Footer
   const activeCount = targets.filter(t => !t.isStale).length;
+  const staleCount = targets.filter(t => t.isStale).length;
+  let statusText = `${activeCount} active target${activeCount === 1 ? '' : 's'}`;
+  if (staleCount > 0) {
+    statusText += ` (${staleCount} stale)`;
+  }
+
   svgParts.push(`
     <g class="status-footer">
       <text x="14" y="${height - 12}" fill="${secondaryTextColor}" font-size="11" font-family="system-ui, sans-serif">
-        ${activeCount} active target${activeCount === 1 ? '' : 's'}
+        ${statusText}
       </text>
     </g>
   `);
