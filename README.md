@@ -88,7 +88,46 @@ When using an Inovelli Blue mmWave switch with ZHA (or Zigbee2MQTT) and a templa
 
 ## Configuration Examples
 
-### Single Sensor Radar View
+### Inovelli Blue ZHA Radar (Garage Example)
+
+Complete configuration for an Inovelli Blue mmWave switch using ZHA:
+
+- `occupancy_entity`: (`binary_sensor.garage_lights_occupancy`) indicates occupied vs clear. When clear (`off`), live targets are immediately cleared.
+- `reporting_entity`: (`switch.garage_lights_mmwave_target_info_report`) indicates whether target coordinate reporting is enabled on the mmWave switch.
+- `boundary_prefix`: (`number.garage_lights_mmwave_`) discovers and tracks all 6 Inovelli boundary slider entities (`width_minimum_left`, `width_maximum_right`, `depth_minimum_near`, `depth_maximum_far`, `height_minimum_floor`, `height_maximum_ceiling`).
+
+```yaml
+type: custom:presence-map-card
+title: Garage Presence
+display_units: imperial
+theme: light
+stale_timeout: 10
+range_meters: 6
+show_rings: true
+show_trails: true
+show_labels: true
+show_boundaries: true
+show_coordinates: true
+demo_mode: false
+sensors:
+  - id: garage
+    name: Garage
+    targets_entity: sensor.mmwave_targets
+    occupancy_entity: binary_sensor.garage_lights_occupancy
+    reporting_entity: switch.garage_lights_mmwave_target_info_report
+    boundary_prefix: number.garage_lights_mmwave_
+    source_units: cm
+    color: '#0284C7'
+    fov: 120
+    position:
+      x: 0
+      y: 0
+    rotation: 0
+    mirror_x: false
+    mirror_y: false
+```
+
+### Generic Single Sensor Radar View
 
 ```yaml
 type: custom:presence-map-card

@@ -9,24 +9,45 @@ interface HaFormElement extends HTMLElement {
 
 export class PresenceMapEditor extends HTMLElement {
   private _config?: PresenceMapCardConfig;
+  private _lastEmittedConfig?: PresenceMapCardConfig;
   private _hass?: HomeAssistant;
   private _root: ShadowRoot;
+  private _form?: HaFormElement;
+  private _staticSchema?: unknown[];
 
   constructor() {
     super();
     this._root = this.attachShadow({ mode: 'open' });
   }
 
+  public connectedCallback(): void {
+    this._ensureForm();
+  }
+
   public setConfig(config: PresenceMapCardConfig): void {
+    const isEcho = this._isConfigEqual(config, this._lastEmittedConfig);
     this._config = { ...config };
-    this.render();
+
+    this._ensureForm();
+
+    if (isEcho) {
+      // Parent echoed our own emitted config back.
+      // Do not overwrite form.data or remount inputs to preserve active typing, caret, and focus!
+      return;
+    }
+
+    if (this._form) {
+      const newFormData = this._configToFormData(this._config);
+      if (!this._isFormDataEqual(this._form.data, newFormData)) {
+        this._form.data = newFormData;
+      }
+    }
   }
 
   public set hass(hass: HomeAssistant) {
     this._hass = hass;
-    const form = this._root.querySelector('ha-form') as HaFormElement | null;
-    if (form) {
-      form.hass = hass;
+    if (this._form) {
+      this._form.hass = hass;
     }
   }
 
@@ -121,6 +142,11 @@ export class PresenceMapEditor extends HTMLElement {
         type: 'expandable',
         title: 'Primary Sensor Configuration',
         schema: [
+          {
+            name: 'sensor_name',
+            label: 'Sensor Display Name',
+            selector: { text: {} },
+          },
           {
             name: 'sensor_targets_entity',
             label: 'Targets Entity (Required)',
@@ -251,6 +277,7 @@ export class PresenceMapEditor extends HTMLElement {
       floorplan_image: config.floorplan?.image ?? '',
       floorplan_width: config.floorplan?.width_meters ?? 10,
       floorplan_height: config.floorplan?.height_meters ?? 8,
+      sensor_name: primarySensor?.name ?? '',
       sensor_targets_entity: primarySensor?.targets_entity ?? '',
       sensor_occupancy_entity: primarySensor?.occupancy_entity ?? '',
       sensor_reporting_entity: primarySensor?.reporting_entity ?? '',
@@ -312,6 +339,10 @@ export class PresenceMapEditor extends HTMLElement {
 
     const updatedPrimary = {
       ...primary,
+      name:
+        typeof formData.sensor_name === 'string' && formData.sensor_name.trim()
+          ? formData.sensor_name.trim()
+          : primary.name || 'Primary Sensor',
       targets_entity:
         typeof formData.sensor_targets_entity === 'string' ? formData.sensor_targets_entity : '',
       occupancy_entity: cleanStr(formData.sensor_occupancy_entity),
@@ -340,11 +371,12 @@ export class PresenceMapEditor extends HTMLElement {
     return config;
   }
 
-  private render(): void {
-    if (!this._config) return;
+  private _ensureForm(): void {
+    if (this._form) return;
 
-    const formData = this._configToFormData(this._config);
-    const schema = this._computeSchema();
+    if (!this._staticSchema) {
+      this._staticSchema = this._computeSchema();
+    }
 
     this._root.innerHTML = `
       <style>
@@ -365,29 +397,52 @@ export class PresenceMapEditor extends HTMLElement {
     `;
 
     const form = this._root.querySelector('ha-form') as HaFormElement | null;
-    if (form) {
-      form.schema = schema;
-      form.data = formData;
-      if (this._hass) {
-        form.hass = this._hass;
-      }
-      form.computeLabel = (s: { label?: string; name: string }) => s.label || s.name;
+    if (!form) return;
 
-      form.addEventListener('value-changed', (ev: Event) => {
-        const customEv = ev as CustomEvent<{ value: Record<string, unknown> }>;
-        const newFormData = customEv.detail.value;
-        const newConfig = this._formDataToConfig(newFormData);
-        this._config = newConfig;
-
-        this.dispatchEvent(
-          new CustomEvent('config-changed', {
-            detail: { config: this._config },
-            bubbles: true,
-            composed: true,
-          })
-        );
-      });
+    this._form = form;
+    this._form.schema = this._staticSchema;
+    if (this._hass) {
+      this._form.hass = this._hass;
     }
+    this._form.computeLabel = (s: { label?: string; name: string }) => s.label || s.name;
+
+    if (this._config) {
+      this._form.data = this._configToFormData(this._config);
+    }
+
+    this._form.addEventListener('value-changed', (ev: Event) => {
+      const customEv = ev as CustomEvent<{ value: Record<string, unknown> }>;
+      const newFormData = customEv.detail.value;
+      const newConfig = this._formDataToConfig(newFormData);
+      this._config = newConfig;
+      this._lastEmittedConfig = JSON.parse(JSON.stringify(newConfig));
+
+      this.dispatchEvent(
+        new CustomEvent('config-changed', {
+          detail: { config: this._config },
+          bubbles: true,
+          composed: true,
+        })
+      );
+    });
+  }
+
+  private _isConfigEqual(a?: PresenceMapCardConfig, b?: PresenceMapCardConfig): boolean {
+    if (a === b) return true;
+    if (!a || !b) return false;
+    return JSON.stringify(a) === JSON.stringify(b);
+  }
+
+  private _isFormDataEqual(a?: Record<string, unknown>, b?: Record<string, unknown>): boolean {
+    if (a === b) return true;
+    if (!a || !b) return false;
+    const keysA = Object.keys(a);
+    const keysB = Object.keys(b);
+    if (keysA.length !== keysB.length) return false;
+    for (const key of keysA) {
+      if (a[key] !== b[key]) return false;
+    }
+    return true;
   }
 }
 

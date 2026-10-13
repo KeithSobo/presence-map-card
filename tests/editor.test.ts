@@ -199,4 +199,181 @@ describe('PresenceMapEditor Visual Configuration Component', () => {
     expect(resultConfig.sensors?.[1].name).toBe('Sensor 2 (Additional)');
     expect(resultConfig.sensors?.[1].position).toEqual({ x: 2, y: 1 });
   });
+
+  it('preserves focus and caret across keystrokes, middle text insertion/deletion, parent echoes, and hass updates', () => {
+    const multiSensorConfig: PresenceMapCardConfig = {
+      ...sampleConfig,
+      title: 'Garage',
+      sensors: [
+        {
+          id: 'garage',
+          name: 'Garage Radar',
+          targets_entity: 'sensor.mmwave_targets',
+        },
+        {
+          id: 'driveway',
+          name: 'Driveway Sensor',
+          targets_entity: 'sensor.driveway_targets',
+          position: { x: 5, y: 10 },
+        },
+      ],
+    };
+
+    const editor = document.createElement('presence-map-editor') as PresenceMapEditor;
+    document.body.appendChild(editor);
+    editor.setConfig(multiSensorConfig);
+
+    const initialForm = editor.shadowRoot?.querySelector('ha-form') as any;
+    expect(initialForm).toBeDefined();
+
+    // Attach a real text input element to ha-form to simulate active user input
+    const textInput = document.createElement('input');
+    textInput.type = 'text';
+    textInput.value = 'Garage';
+    initialForm.appendChild(textInput);
+
+    textInput.focus();
+    textInput.setSelectionRange(6, 6); // Caret at end of "Garage"
+    expect(textInput.selectionStart).toBe(6);
+    expect(textInput.selectionEnd).toBe(6);
+
+    let currentConfig = multiSensorConfig;
+    editor.addEventListener('config-changed', (ev: any) => {
+      currentConfig = ev.detail.config;
+    });
+
+    // 1. Types a complete multi-character name (" Lights") character-by-character without refocusing
+    const appendChars = ' Lights';
+    for (const char of appendChars) {
+      const prevCaret = textInput.selectionStart!;
+      textInput.value =
+        textInput.value.slice(0, prevCaret) + char + textInput.value.slice(prevCaret);
+      textInput.setSelectionRange(prevCaret + 1, prevCaret + 1);
+
+      // ha-form emits value-changed
+      initialForm.dispatchEvent(
+        new CustomEvent('value-changed', {
+          detail: {
+            value: {
+              ...initialForm.data,
+              title: textInput.value,
+            },
+          },
+          bubbles: true,
+          composed: true,
+        })
+      );
+
+      // Parent Lovelace editor echoes the updated configuration back to setConfig
+      editor.setConfig(currentConfig);
+
+      // Concurrently, Home Assistant emits unrelated entity state updates to editor.hass
+      editor.hass = {
+        states: {
+          'sensor.outdoor_temperature': {
+            entity_id: 'sensor.outdoor_temperature',
+            state: '72',
+            attributes: {},
+            last_changed: new Date().toISOString(),
+            last_updated: new Date().toISOString(),
+          },
+        },
+      } as any;
+
+      // Verify DOM identity of ha-form is completely preserved (not wiped or remounted)
+      const currentForm = editor.shadowRoot?.querySelector('ha-form');
+      expect(currentForm).toBe(initialForm);
+
+      // Verify input remains in DOM and retained focus & caret position
+      expect(textInput.isConnected).toBe(true);
+      expect(textInput.selectionStart).toBe(prevCaret + 1);
+      expect(textInput.selectionEnd).toBe(prevCaret + 1);
+    }
+
+    expect(textInput.value).toBe('Garage Lights');
+    expect(currentConfig.title).toBe('Garage Lights');
+
+    // 2. Inserts text in the middle of an existing value:
+    // Move caret to index 6 (between "Garage" and " Lights")
+    textInput.setSelectionRange(6, 6);
+    expect(textInput.selectionStart).toBe(6);
+
+    // Insert " Door" in the middle
+    const insertChars = ' Door';
+    for (const char of insertChars) {
+      const prevCaret = textInput.selectionStart!;
+      textInput.value =
+        textInput.value.slice(0, prevCaret) + char + textInput.value.slice(prevCaret);
+      textInput.setSelectionRange(prevCaret + 1, prevCaret + 1);
+
+      initialForm.dispatchEvent(
+        new CustomEvent('value-changed', {
+          detail: {
+            value: {
+              ...initialForm.data,
+              title: textInput.value,
+            },
+          },
+          bubbles: true,
+          composed: true,
+        })
+      );
+
+      editor.setConfig(currentConfig);
+      editor.hass = { states: {} } as any;
+
+      expect(editor.shadowRoot?.querySelector('ha-form')).toBe(initialForm);
+      expect(textInput.isConnected).toBe(true);
+      expect(textInput.selectionStart).toBe(prevCaret + 1);
+      expect(textInput.selectionEnd).toBe(prevCaret + 1);
+    }
+
+    expect(textInput.value).toBe('Garage Door Lights');
+    expect(currentConfig.title).toBe('Garage Door Lights');
+    expect(textInput.selectionStart).toBe(11);
+
+    // 3. Deletes text in the middle of existing value:
+    // Delete " Door" (5 characters) backwards from index 11
+    for (let i = 0; i < 5; i++) {
+      const prevCaret = textInput.selectionStart!;
+      textInput.value = textInput.value.slice(0, prevCaret - 1) + textInput.value.slice(prevCaret);
+      textInput.setSelectionRange(prevCaret - 1, prevCaret - 1);
+
+      initialForm.dispatchEvent(
+        new CustomEvent('value-changed', {
+          detail: {
+            value: {
+              ...initialForm.data,
+              title: textInput.value,
+            },
+          },
+          bubbles: true,
+          composed: true,
+        })
+      );
+
+      editor.setConfig(currentConfig);
+      editor.hass = { states: {} } as any;
+
+      expect(editor.shadowRoot?.querySelector('ha-form')).toBe(initialForm);
+      expect(textInput.isConnected).toBe(true);
+      expect(textInput.selectionStart).toBe(prevCaret - 1);
+      expect(textInput.selectionEnd).toBe(prevCaret - 1);
+    }
+
+    expect(textInput.value).toBe('Garage Lights');
+    expect(textInput.selectionStart).toBe(6);
+
+    // 4. Confirms the resulting configuration saves correctly
+    expect(currentConfig.title).toBe('Garage Lights');
+
+    // 5. Confirms additional sensor configurations are preserved
+    expect(currentConfig.sensors).toHaveLength(2);
+    expect(currentConfig.sensors?.[0].id).toBe('garage');
+    expect(currentConfig.sensors?.[1].id).toBe('driveway');
+    expect(currentConfig.sensors?.[1].name).toBe('Driveway Sensor');
+    expect(currentConfig.sensors?.[1].position).toEqual({ x: 5, y: 10 });
+
+    document.body.removeChild(editor);
+  });
 });
