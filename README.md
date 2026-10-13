@@ -45,13 +45,14 @@ Supports single or multiple presence sensors on a shared drawing surface.
 1. Download `presence-map-card.js` from the [Releases](https://github.com/KeithSobo/presence-map-card/releases) page.
 2. Copy `presence-map-card.js` into your Home Assistant directory under:
    ```
-   /config/www/presence-map-card.js
+   /config/www/community/presence-map-card/presence-map-card.js
    ```
+   _(Create the `community/presence-map-card` folder inside `/config/www/` if it does not already exist, matching the HACS directory structure)._
 3. In Home Assistant, navigate to **Settings** &rarr; **Dashboards** &rarr; **Resources** (top right three dots).
 4. Click **Add Resource**:
-   - URL: `/local/presence-map-card.js`
+   - URL: `/local/community/presence-map-card/presence-map-card.js?v=2026.10.1.1`
    - Resource type: `JavaScript Module`
-5. Refresh your browser.
+5. Refresh your browser (or hard-refresh cache).
 
 ---
 
