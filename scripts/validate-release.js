@@ -88,14 +88,31 @@ const currentFilePath = fileURLToPath(import.meta.url);
 const executedFilePath = process.argv[1] ? path.resolve(process.argv[1]) : '';
 
 if (executedFilePath === currentFilePath) {
-  const tag = process.argv[2];
+  const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  let tag = process.argv[2];
+
   if (!tag) {
-    console.error('Usage: node scripts/validate-release.js <tag>');
+    if (process.env.GITHUB_REF_NAME && process.env.GITHUB_REF_NAME.startsWith('v')) {
+      tag = process.env.GITHUB_REF_NAME;
+    } else {
+      const versionTsPath = path.join(rootDir, 'src', 'config', 'version.ts');
+      if (fs.existsSync(versionTsPath)) {
+        const content = fs.readFileSync(versionTsPath, 'utf8');
+        const match = content.match(/PRESENCE_MAP_VERSION\s*=\s*['"]([^'"]+)['"]/);
+        if (match) {
+          tag = `v${match[1]}`;
+        }
+      }
+    }
+  }
+
+  if (!tag) {
+    console.error('Usage: node scripts/validate-release.js [tag]');
     process.exit(1);
   }
 
   try {
-    const result = validateRelease(tag);
+    const result = validateRelease(tag, rootDir);
     console.log(
       `Release validation succeeded: Tag ${result.tag} matches version ${result.version} and dist artifacts are valid.`
     );

@@ -59,3 +59,7 @@ All source code lives in `src/` organized into decoupled, single-responsibility 
    - Tests must be behavioral and cover real edge cases (unavailable entities, malformed target JSON, overlapping sensors, boundary transforms, coordinate math, stale data transitions, trail bounds, and editor round-tripping).
 6. **Licensing**:
    - The project is licensed under the MIT License by Keith Sobolewski and Daryl Peddle.
+7. **HACS Validation & Release Packaging**:
+   - The `.github/workflows/hacs.yml` workflow is set to manual dispatch (`workflow_dispatch`) during active development.
+   - Automatic triggers (`push`, `pull_request`, `schedule`) must be restored before submitting to the default HACS store.
+   - Card distribution bundle `dist/presence-map-card.js` is tracked in the repository and published as a GitHub Release asset via `.github/workflows/release.yml`, satisfying HACS plugin retrieval for both branch installs and tagged releases.

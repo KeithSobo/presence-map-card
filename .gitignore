@@ -2,8 +2,6 @@
 node_modules/
 package-lock.json.bak
 
-# Build output
-dist/
 
 # Test and coverage output
 coverage/

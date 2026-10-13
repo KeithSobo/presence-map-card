@@ -40,3 +40,9 @@ Thank you for your interest in contributing to PresenceMap!
 1. Create a feature branch from `main`.
 2. Ensure `npm run format`, `npm run lint`, `npm run typecheck`, `npm run test:coverage`, and `npm run build` all pass cleanly.
 3. Open a Pull Request describing your changes, motivation, and any testing performed with actual sensors or simulated demo data.
+
+## HACS Integration & Repository Submission
+
+- `.github/workflows/hacs.yml` is configured for manual dispatch (`workflow_dispatch`) during active development.
+- **Important**: Automatic triggers (`push`, `pull_request`, and `schedule`) in `.github/workflows/hacs.yml` must be restored before submitting PresenceMap to the default HACS store (`hacs/default`).
+- Card distribution bundle `dist/presence-map-card.js` is committed directly to the repository and also published as a GitHub Release asset via `.github/workflows/release.yml`, satisfying HACS plugin retrieval both from git branches and tagged releases.
