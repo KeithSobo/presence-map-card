@@ -1,0 +1,72 @@
+name: Release PresenceMap
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and Publish Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build card distribution bundle
+        run: npm run build
+
+      - name: Extract release notes for tag
+        id: changelog
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          echo "TAG: $TAG"
+
+          if [ ! -f CHANGELOG.md ]; then
+            echo "CHANGELOG.md not found"
+            exit 1
+          fi
+
+          START_LINE=$(grep -nE "^##[[:space:]]+${TAG}[[:space:]]*$" CHANGELOG.md | cut -d: -f1 | head -n1 || true)
+
+          if [ -z "$START_LINE" ]; then
+            echo "No changelog section found for ${TAG}"
+            exit 1
+          fi
+
+          END_LINE=$(tail -n +"$((START_LINE+1))" CHANGELOG.md | grep -n "^## " | head -n1 | cut -d: -f1 || true)
+
+          if [ -z "$END_LINE" ]; then
+            END_LINE=$(wc -l < CHANGELOG.md)
+          else
+            END_LINE=$((START_LINE + END_LINE - 1))
+          fi
+
+          sed -n "$((START_LINE+1))","$END_LINE"p CHANGELOG.md > RELEASE_NOTES.md
+
+          if [ ! -s RELEASE_NOTES.md ]; then
+            echo "Release notes section for ${TAG} is empty"
+            exit 1
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2.4.2
+        with:
+          files: |
+            dist/presence-map-card.js
+          body_path: RELEASE_NOTES.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
