@@ -149,6 +149,63 @@ describe('Configuration Validator and Defaults', () => {
     expect(config.theme).toBe('dark');
   });
 
+  it('normalizes all optional sensor fields including boundaries, trail_attribute, and units', () => {
+    const raw = {
+      type: 'custom:presence-map-card',
+      sensors: [
+        {
+          id: 'custom_sensor',
+          name: 'Custom Sensor',
+          targets_entity: 'sensor.target',
+          targets_attribute: 'custom_targets',
+          occupancy_entity: 'binary_sensor.occ',
+          reporting_entity: 'switch.rep',
+          boundary_prefix: 'number.prefix_',
+          boundary_min_x_entity: 'number.min_x',
+          boundary_max_x_entity: 'number.max_x',
+          boundary_min_y_entity: 'number.min_y',
+          boundary_max_y_entity: 'number.max_y',
+          boundary_min_z_entity: 'number.min_z',
+          boundary_max_z_entity: 'number.max_z',
+          trail_attribute: 'custom_trail',
+          source_units: 'mm',
+          position: { x: 5, y: -2 },
+          rotation: 180,
+          mirror_x: true,
+          mirror_y: true,
+          color: '#123456',
+          fov: 90,
+          max_distance: 10,
+        },
+      ],
+    };
+
+    const { valid, config } = validateConfig(raw);
+    expect(valid).toBe(true);
+    const s = config.sensors![0];
+    expect(s.id).toBe('custom_sensor');
+    expect(s.name).toBe('Custom Sensor');
+    expect(s.targets_attribute).toBe('custom_targets');
+    expect(s.occupancy_entity).toBe('binary_sensor.occ');
+    expect(s.reporting_entity).toBe('switch.rep');
+    expect(s.boundary_prefix).toBe('number.prefix_');
+    expect(s.boundary_min_x_entity).toBe('number.min_x');
+    expect(s.boundary_max_x_entity).toBe('number.max_x');
+    expect(s.boundary_min_y_entity).toBe('number.min_y');
+    expect(s.boundary_max_y_entity).toBe('number.max_y');
+    expect(s.boundary_min_z_entity).toBe('number.min_z');
+    expect(s.boundary_max_z_entity).toBe('number.max_z');
+    expect(s.trail_attribute).toBe('custom_trail');
+    expect(s.source_units).toBe('mm');
+    expect(s.position).toEqual({ x: 5, y: -2 });
+    expect(s.rotation).toBe(180);
+    expect(s.mirror_x).toBe(true);
+    expect(s.mirror_y).toBe(true);
+    expect(s.color).toBe('#123456');
+    expect(s.fov).toBe(90);
+    expect(s.max_distance).toBe(10);
+  });
+
   it('provides a valid stub configuration for Lovelace card picker', () => {
     const stub = getStubConfig();
     expect(stub.type).toBe('custom:presence-map-card');
