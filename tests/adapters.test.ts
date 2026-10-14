@@ -663,4 +663,284 @@ describe('Inovelli ZHA Adapter and HA Entity Parsing', () => {
     expect(result.targets[0].z).toBe(0.5);
     expect(result.targets[0].x).toBe(1.5);
   });
+
+  describe('Diagnostics and Validation Methods for Visual Editor', () => {
+    it('validates targets attribute with various HA state shapes', () => {
+      // 1. Missing entity
+      const resMissing = InovelliZhaAdapter.validateTargetsAttribute(
+        'sensor.missing',
+        'targets',
+        undefined
+      );
+      expect(resMissing.status).toBe('unavailable');
+
+      const hass: HomeAssistant = {
+        states: {
+          'sensor.radar': {
+            entity_id: 'sensor.radar',
+            state: '1',
+            attributes: {
+              targets: [{ x: 10, y: 20 }],
+              empty_targets: [],
+              bad_format: 'not json at all {',
+              json_targets: JSON.stringify([{ x: 5, y: 15 }]),
+              zero_number: 0,
+            },
+            last_changed: '2026-10-13T12:00:00Z',
+            last_updated: '2026-10-13T12:00:00Z',
+          },
+        },
+      };
+
+      // 2. Compatible targets
+      const resComp = InovelliZhaAdapter.validateTargetsAttribute('sensor.radar', 'targets', hass);
+      expect(resComp.status).toBe('compatible');
+      expect(resComp.targetCount).toBe(1);
+
+      // 3. JSON string targets
+      const resJson = InovelliZhaAdapter.validateTargetsAttribute(
+        'sensor.radar',
+        'json_targets',
+        hass
+      );
+      expect(resJson.status).toBe('compatible');
+      expect(resJson.targetCount).toBe(1);
+
+      // 4. Valid empty targets
+      const resEmpty = InovelliZhaAdapter.validateTargetsAttribute(
+        'sensor.radar',
+        'empty_targets',
+        hass
+      );
+      expect(resEmpty.status).toBe('empty');
+      expect(resEmpty.targetCount).toBe(0);
+
+      // 5. Unsupported string format
+      const resBad = InovelliZhaAdapter.validateTargetsAttribute(
+        'sensor.radar',
+        'bad_format',
+        hass
+      );
+      expect(resBad.status).toBe('unsupported');
+
+      // 6. Unsupported non-array / non-string
+      const resNum = InovelliZhaAdapter.validateTargetsAttribute(
+        'sensor.radar',
+        'zero_number',
+        hass
+      );
+      expect(resNum.status).toBe('unsupported');
+
+      // 7. Missing attribute
+      const resNonExistent = InovelliZhaAdapter.validateTargetsAttribute(
+        'sensor.radar',
+        'non_existent',
+        hass
+      );
+      expect(resNonExistent.status).toBe('unavailable');
+    });
+
+    it('resolves boundary details across explicit entities, prefix fallback, and validation ranges', () => {
+      const hass: HomeAssistant = {
+        states: {
+          'number.prefix_width_minimum_left': {
+            entity_id: 'number.prefix_width_minimum_left',
+            state: '-150',
+            attributes: { unit_of_measurement: 'cm' },
+            last_changed: '2026-10-13T12:00:00Z',
+            last_updated: '2026-10-13T12:00:00Z',
+          },
+          'number.prefix_width_maximum_right': {
+            entity_id: 'number.prefix_width_maximum_right',
+            state: '150',
+            attributes: { unit_of_measurement: 'cm' },
+            last_changed: '2026-10-13T12:00:00Z',
+            last_updated: '2026-10-13T12:00:00Z',
+          },
+          'number.prefix_depth_minimum_near': {
+            entity_id: 'number.prefix_depth_minimum_near',
+            state: '0',
+            attributes: { unit_of_measurement: 'cm' },
+            last_changed: '2026-10-13T12:00:00Z',
+            last_updated: '2026-10-13T12:00:00Z',
+          },
+          'number.prefix_depth_maximum_far': {
+            entity_id: 'number.prefix_depth_maximum_far',
+            state: '400',
+            attributes: { unit_of_measurement: 'cm' },
+            last_changed: '2026-10-13T12:00:00Z',
+            last_updated: '2026-10-13T12:00:00Z',
+          },
+          'number.custom_z_min': {
+            entity_id: 'number.custom_z_min',
+            state: '-50',
+            attributes: { unit_of_measurement: 'cm' },
+            last_changed: '2026-10-13T12:00:00Z',
+            last_updated: '2026-10-13T12:00:00Z',
+          },
+          'number.custom_z_max': {
+            entity_id: 'number.custom_z_max',
+            state: '180',
+            attributes: { unit_of_measurement: 'cm' },
+            last_changed: '2026-10-13T12:00:00Z',
+            last_updated: '2026-10-13T12:00:00Z',
+          },
+        },
+      };
+
+      const sensor: SensorConfig = {
+        id: 'test',
+        name: 'Test',
+        boundary_prefix: 'number.prefix_',
+        boundary_min_z_entity: 'number.custom_z_min',
+        boundary_max_z_entity: 'number.custom_z_max',
+      };
+
+      const details = InovelliZhaAdapter.resolveBoundaryDetails(sensor, hass);
+      expect(details.isCompleteXY).toBe(true);
+      expect(details.isValid).toBe(true);
+      expect(details.error).toBeUndefined();
+
+      const minX = details.items.find(i => i.key === 'minX');
+      expect(minX?.source).toBe('prefix');
+      expect(minX?.value).toBe(-150);
+      expect(minX?.unit).toBe('cm');
+
+      const minZ = details.items.find(i => i.key === 'minZ');
+      expect(minZ?.source).toBe('explicit');
+      expect(minZ?.value).toBe(-50);
+
+      // Inverted X Range error test
+      const invertedHass: HomeAssistant = {
+        states: {
+          ...hass.states,
+          'number.prefix_width_minimum_left': {
+            ...hass.states['number.prefix_width_minimum_left'],
+            state: '200',
+          },
+        },
+      };
+      const invertedDetails = InovelliZhaAdapter.resolveBoundaryDetails(sensor, invertedHass);
+      expect(invertedDetails.isValid).toBe(false);
+      expect(invertedDetails.error).toContain('Invalid X range');
+
+      // Inverted Y Range error test
+      const invertedYHass: HomeAssistant = {
+        states: {
+          ...hass.states,
+          'number.prefix_depth_minimum_near': {
+            ...hass.states['number.prefix_depth_minimum_near'],
+            state: '500',
+          },
+        },
+      };
+      const invertedYDetails = InovelliZhaAdapter.resolveBoundaryDetails(sensor, invertedYHass);
+      expect(invertedYDetails.isValid).toBe(false);
+      expect(invertedYDetails.error).toContain('Invalid Y range');
+
+      // Inverted Z Range error test
+      const invertedZHass: HomeAssistant = {
+        states: {
+          ...hass.states,
+          'number.custom_z_min': {
+            ...hass.states['number.custom_z_min'],
+            state: '250',
+          },
+        },
+      };
+      const invertedZDetails = InovelliZhaAdapter.resolveBoundaryDetails(sensor, invertedZHass);
+      expect(invertedZDetails.isValid).toBe(false);
+      expect(invertedZDetails.error).toContain('Invalid Z range');
+    });
+
+    it('compiles sensor setup feedback with accurate HA diagnostics', () => {
+      // 1. Missing targets entity
+      const emptySensor: SensorConfig = { id: 's1', name: 'S1' };
+      const fb1 = InovelliZhaAdapter.getSensorSetupFeedback(emptySensor, undefined);
+      expect(fb1.some(f => f.message.includes('Targets entity not selected'))).toBe(true);
+
+      // 2. Unavailable targets entity
+      const sensorWithTarget: SensorConfig = {
+        id: 's1',
+        name: 'S1',
+        targets_entity: 'sensor.target_radar',
+        reporting_entity: 'switch.rep',
+        occupancy_entity: 'binary_sensor.occ',
+      };
+      const fb2 = InovelliZhaAdapter.getSensorSetupFeedback(sensorWithTarget, undefined);
+      expect(fb2.some(f => f.message.includes('is missing or unavailable'))).toBe(true);
+
+      // 3. Reporting switch off, occupancy clear (off)
+      const hass: HomeAssistant = {
+        states: {
+          'sensor.target_radar': {
+            entity_id: 'sensor.target_radar',
+            state: '0',
+            attributes: { targets: [] },
+            last_changed: '2026-10-13T12:00:00Z',
+            last_updated: '2026-10-13T12:00:00Z',
+          },
+          'switch.rep': {
+            entity_id: 'switch.rep',
+            state: 'off',
+            attributes: {},
+            last_changed: '2026-10-13T12:00:00Z',
+            last_updated: '2026-10-13T12:00:00Z',
+          },
+          'binary_sensor.occ': {
+            entity_id: 'binary_sensor.occ',
+            state: 'off',
+            attributes: {},
+            last_changed: '2026-10-13T12:00:00Z',
+            last_updated: '2026-10-13T12:00:00Z',
+          },
+        },
+      };
+
+      const fb3 = InovelliZhaAdapter.getSensorSetupFeedback(sensorWithTarget, hass);
+      expect(fb3.some(f => f.message.includes('Valid target data with no current targets'))).toBe(
+        true
+      );
+      expect(
+        fb3.some(
+          f => f.message.toLowerCase().includes('reporting switch') && f.message.includes('is off')
+        )
+      ).toBe(true);
+      expect(
+        fb3.some(
+          f =>
+            f.message.toLowerCase().includes('occupancy binary sensor') &&
+            f.message.includes('is clear')
+        )
+      ).toBe(true);
+
+      // 4. Occupancy on, reporting unavailable
+      const hass2: HomeAssistant = {
+        states: {
+          ...hass.states,
+          'binary_sensor.occ': {
+            entity_id: 'binary_sensor.occ',
+            state: 'on',
+            attributes: {},
+            last_changed: '2026-10-13T12:00:00Z',
+            last_updated: '2026-10-13T12:00:00Z',
+          },
+          'switch.rep': {
+            entity_id: 'switch.rep',
+            state: 'unavailable',
+            attributes: {},
+            last_changed: '2026-10-13T12:00:00Z',
+            last_updated: '2026-10-13T12:00:00Z',
+          },
+        },
+      };
+      const fb4 = InovelliZhaAdapter.getSensorSetupFeedback(sensorWithTarget, hass2);
+      expect(fb4.some(f => f.message.includes('is occupied (on)'))).toBe(true);
+      expect(
+        fb4.some(
+          f => f.message.includes('Reporting switch') && f.message.includes('is unavailable')
+        )
+      ).toBe(true);
+    });
+  });
 });

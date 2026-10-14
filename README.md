@@ -203,6 +203,40 @@ sensors:
 
 ---
 
+## Visual Configuration Editor
+
+The card includes an integrated visual configuration editor supporting comprehensive card-level and per-sensor customization without requiring direct YAML manipulation:
+
+### 1. Collapsible Global Sections
+
+- **General**: Title, display units (metric / imperial), and theme override (automatic, light, dark).
+- **Radar Display**: Radar range radius (in meters or feet/inches based on display units), distance rings, target labels, and coordinate displays.
+- **Targets & Trails**: Movement trail visibility, stale target expiration timeout, retention of last-known positions when clear, trail duration (`trail_history_seconds`), and maximum trail points per target (`trail_max_points`).
+- **Floor Plan**: Floor-plan background image path/URL and world dimensions (width and height in meters or feet/inches based on display units).
+- **Sensors**: Multi-sensor list editor and sensor creation toolbar.
+- **Advanced**: Interactive demo mode simulator.
+
+### 2. Multi-Sensor List Management
+
+- **Individual Sensor Cards**: Every sensor in your configuration is represented in a dedicated expandable row displaying its name, configured color swatch, and targets entity summary.
+- **Sensor Reordering & Lifecycle**: Move up, move down, duplicate, and remove controls with boundary disabling and stable, unique sensor identity tracking (`id`).
+- **Subsections per Sensor**:
+  - **Main**: Name, targets entity (with attribute selector), and optional occupancy binary sensor.
+  - **Color**: Native color picker, quick-select preset palette, and custom text input supporting hex, rgb, hsl, or CSS color names with validation and preservation of unrepresentable values.
+  - **Placement**: Cartesian mounting coordinates $(X, Y)$ in metric meters or imperial feet/inches (with sign selector), rotation angle (0°–359° clockwise), horizontal/vertical mirroring, illustrative field-of-view cone angle, and placement guidance explanations.
+  - **Boundaries**: Entity prefix discovery, explicit boundary entity overrides (`min_x`, `max_x`, `min_y`, `max_y`, `min_z`, `max_z`), and live resolution diagnostics status table with explicit vs prefix resolution badges, current values, units, and complete X/Y boundary availability.
+  - **Advanced**: Sensor source length units (`mm`, `cm`, `m`, `in`, `ft`), optional target reporting switch detection, and targets attribute selector.
+  - **Trail Source**: Informed history attribute selector.
+
+### 3. Setup Feedback & Informed Attribute Selectors
+
+- **Read-Only Setup Feedback**: Displays concise diagnostics inside each sensor's expanded settings based on current Home Assistant entity state (e.g. valid target detections, room clear with 0 targets, targets attribute missing/malformed, reporting switch off, or occupancy clear). An empty room is treated as a valid state rather than an error.
+- **Targets Attribute Selector**: Located under each sensor's **Advanced** subsection. Defaults to "Default — targets" (which unsets `targets_attribute` for runtime fallback), discovers available attributes from the selected targets entity, supports custom attribute names, and provides real-time validation badges.
+- **History Attribute Selector**: Located in each sensor's **Trail source** subsection. Inspects the attributes of the selected targets entity with real-time format validation feedback (compatible trail data, empty data, unsupported format, or unavailable) and fallback custom attribute name entry.
+- **Unit-Aware Measurement Inputs**: When `display_units: imperial` is selected, radar range, floor-plan dimensions, and sensor position X/Y are presented in feet and inches (`[ ft ] ft  [ in ] in` with a `[ + / - ]` sign selector for sensor coordinates). Values are stored in standard meter YAML fields without rounding drift across unit toggles. Source units (`source_units`) remain strictly separate as they describe incoming device coordinates.
+
+---
+
 ## Floor-Plan Calibration Guide
 
 When overlaying presence targets onto a floor plan:

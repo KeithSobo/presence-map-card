@@ -82,6 +82,14 @@
 
 ### 6. Visual Editor (`src/editor/`)
 
-- Custom element `presence-map-editor` leveraging Home Assistant's `ha-form` schema.
-- Allows editing title, units, theme, stale timeout, floor-plan URL/path, and sensor definitions.
+- Custom element `presence-map-editor` providing full multi-sensor configuration in Lovelace.
+- **Expandable Organization**: Global settings partitioned into collapsible accordion sections collapsed by default (General, Radar Display, Targets & Trails, Floor Plan, Sensors, and Advanced).
+- **Full Sensor List Editing**: Dynamic management of the `sensors` array supporting Add, Duplicate, Remove, and Move Up/Down reordering with list boundary controls and stable unique sensor identity tracking (`id`).
+- **Trail Controls**: Direct configuration of `trail_history_seconds` and `trail_max_points` (per-target point cap) with default and unset behavior.
+- **Color Controls**: Composite color control combining a native color picker, curated preset palette, and custom text input supporting hex, rgb, hsl, or CSS color names with validation and preservation of unrepresentable values.
+- **Unit-Aware Measurement Inputs**: Real-time dual feet/inches inputs with sign selector for sensor coordinates, floor-plan dimensions, and radar range when `display_units: imperial` is active; stored continuously in standard YAML meters with zero conversion drift across unit switches.
+- **Live Diagnostics & Resolution Status**: Read-only sensor setup feedback diagnosing entity availability, reporting switch state, occupancy state, and room clear states; boundary resolution table detailing explicit vs prefix fallback, values, units, and complete X/Y boundary readiness.
+- **Informed Targets & Trail Selectors**: Dynamic attribute inspection of the selected targets entity with real-time format validation feedback (compatible data, empty room, unsupported format, or unavailable) for both targets and trail coordinates.
+- **Placement Guidance**: Integrated orientation guidance derived directly from the mathematical coordinate transforms (radar center vs floor-plan top-left origins, sensor position vs relative target coordinates, clockwise rotation, and illustrative FOV cone).
+- **Reliability & State Preservation**: Preserves unexposed configuration fields, unsets cleared optional overrides, preserves numeric zero coordinates, and maintains input focus, caret position, and accordion states across configuration echoes and state updates.
 - Fires standard `config-changed` custom events on edit.
